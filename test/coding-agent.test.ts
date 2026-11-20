@@ -29,8 +29,8 @@ test('coding loop inspects a project, edits a file and runs the requested check'
   assert.equal(await readFile(join(root, 'value.txt'), 'utf8'), 'after');
   assert.deepEqual(result.files, ['value.txt']);
   assert.equal(result.completed, true);
-  assert.equal(result.checks[0].exitCode, 0);
-  assert.equal(result.checks[0].stale, false);
+  assert.equal(result.checks[0]?.exitCode, 0);
+  assert.equal(result.checks[0]?.stale, false);
   assert.deepEqual(result.graph.edges.map(edge => edge.kind), ['read', 'read', 'edited', 'ran']);
   assert.ok(result.graph.nodes.some(node => node.kind === 'file' && node.label === 'value.txt'));
 });
@@ -61,7 +61,7 @@ test('project boundaries, ambiguous edits, and checks after edits are explicit',
   assert.ok(observations.some(message => message.includes('outside the accessible project')));
   if (process.platform !== 'win32') assert.ok(observations.some(message => message.includes('Symbolic links')));
   assert.ok(observations.some(message => message.includes('match exactly once')));
-  assert.equal(result.checks[0].stale, true);
+  assert.equal(result.checks[0]?.stale, true);
   assert.equal(await readFile(join(root, 'value.txt'), 'utf8'), 'new');
 });
 

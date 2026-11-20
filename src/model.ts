@@ -45,13 +45,18 @@ export async function planOrder(observation: Observation, checks: Check[], ask: 
     actions.push({ action, check });
     messages.push({ role: 'assistant', content: JSON.stringify({ action, check }) });
     if (action === 'inspect_check') {
-      messages.push({ role: 'user', content: JSON.stringify({ check, expects: checks[check - 1].expects }) });
+      const chosen = checks[check - 1];
+      if (!chosen) throw new Error('Planner action was outside the allowed scope');
+      messages.push({ role: 'user', content: JSON.stringify({ check, expects: chosen.expects }) });
     } else {
       priority.add(check - 1);
       messages.push({ role: 'user', content: JSON.stringify({ check, prioritized: true }) });
     }
   }
-  const ordered = [...priority].map(index => checks[index]);
+  const ordered = [...priority].flatMap(index => {
+    const item = checks[index];
+    return item ? [item] : [];
+  });
   ordered.push(...checks.filter((_, index) => !priority.has(index)));
   return { checks: ordered, actions };
 }

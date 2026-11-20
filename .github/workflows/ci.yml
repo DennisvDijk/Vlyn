@@ -14,52 +14,128 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Verify (${{ matrix.os }}, Node ${{ matrix.node }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            node: '24.12.0'
-          - os: ubuntu-24.04
-            node: '26'
-          - os: macos-latest
-            node: '26'
-          - os: windows-latest
-            node: '26'
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
 
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck
+        run: npm run check
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        node: ['24', '26']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test
+        run: node --test --test-reporter=spec --test-reporter=junit --test-reporter-destination=stdout --test-reporter-destination=junit.xml test/*.test.ts
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.os }}-node-${{ matrix.node }}
+          path: junit.xml
+          if-no-files-found: ignore
 
-      - name: Typecheck
-        run: npm run check
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Audit the lockfile
+        run: |
+          echo "Production dependencies only (npm audit --omit=dev). This package has none today."
+          npm audit --package-lock-only --omit=dev --audit-level=high
+          echo "Full lockfile, including toolchain devDependencies."
+          npm audit --package-lock-only --audit-level=high
 
-      - name: Run tests and CLI smoke checks
-        run: npm test
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Coverage
+        run: npm run coverage
 
   result:
     name: CI result
-    if: ${{ always() }}
-    needs: verify
+    if: always()
+    needs: [lint, typecheck, test, audit, coverage]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:
-      - name: Require every verification job to pass
+      - name: Require every job to pass
         env:
-          VERIFY_RESULT: ${{ needs.verify.result }}
-        run: test "$VERIFY_RESULT" = success
+          LINT: ${{ needs.lint.result }}
+          TYPECHECK: ${{ needs.typecheck.result }}
+          TEST: ${{ needs.test.result }}
+          AUDIT: ${{ needs.audit.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: test "$LINT" = success && test "$TYPECHECK" = success && test "$TEST" = success && test "$AUDIT" = success && test "$COVERAGE" = success

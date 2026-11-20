@@ -95,7 +95,7 @@ function shapeChanges(base: JsonObject, candidate: JsonObject, prefix: string[] 
     const path = [...prefix, field];
     const before = kind(oldValue);
     const after = kind(newValue);
-    if (before !== after) changes.push({ path, before, after });
+    if (before !== after) changes.push({ path, ...(before !== undefined ? { before } : {}), ...(after !== undefined ? { after } : {}) });
     if (isObject(oldValue) && isObject(newValue)) changes.push(...shapeChanges(oldValue, newValue, path));
   }
   return changes;
@@ -143,6 +143,7 @@ export async function readWorkspace(directory: string): Promise<Workspace> {
       continue;
     }
     const contract = matches[0];
+    if (!contract) throw new Error(`${target.service} has no contract`);
     const id = digest(JSON.stringify([checkVersion, environment, key, candidate.source.digest, contract.source.digest]));
     targets.push({ ...target, check: { ...target, id, ...contract } });
   }

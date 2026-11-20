@@ -37,11 +37,15 @@ test('configuration follows the key and gateway the person already has', () => {
 test('the model list comes from the gateway with the key, skipping embeddings and image models', async () => {
   const { calls, request } = fakeFetch(() => json({ data: [{ id: 'gpt-5.1' }, { id: 'text-embedding-3' }, { id: 'claude-sonnet-5-5' }, { id: 'dall-e-3' }, { id: 'gpt-5.1' }] }));
   assert.deepEqual(await fetchModels(gateway, request), ['claude-sonnet-5-5', 'gpt-5.1']);
-  assert.equal(calls[0].url, 'https://llm.example.com/v1/models');
-  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, 'Bearer sk-secret');
+  const listed = calls[0];
+  if (!listed) throw new Error('expected a models request');
+  assert.equal(listed.url, 'https://llm.example.com/v1/models');
+  assert.equal((listed.init.headers as Record<string, string>).Authorization, 'Bearer sk-secret');
   const anthropic = fakeFetch(() => json({ data: [{ id: 'claude-opus-5-5' }] }));
   await fetchModels({ ...gateway, kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1' }, anthropic.request);
-  assert.equal((anthropic.calls[0].init.headers as Record<string, string>)['x-api-key'], 'sk-secret');
+  const anthropicCall = anthropic.calls[0];
+  if (!anthropicCall) throw new Error('expected an Anthropic models request');
+  assert.equal((anthropicCall.init.headers as Record<string, string>)['x-api-key'], 'sk-secret');
   assert.equal(chooseModel(['gpt-4.1-mini', 'claude-sonnet-5-5', 'claude-opus-5-5']), 'claude-opus-5-5');
   assert.equal(chooseModel(['mystery-1']), 'mystery-1');
 });
@@ -60,7 +64,9 @@ test('the catalog caches by key hash, refreshes when stale, keeps the last list 
   assert.deepEqual([change.added, change.removed], [['c-1'], ['a-1']]);
   const files = await readdir(join(home, 'models'));
   assert.equal(files.length, 1);
-  assert.ok(!(await readFile(join(home, 'models', files[0]), 'utf8')).includes('sk-secret'), 'the key is never stored');
+  const cacheName = files[0];
+  if (!cacheName) throw new Error('expected a model cache file');
+  assert.ok(!(await readFile(join(home, 'models', cacheName), 'utf8')).includes('sk-secret'), 'the key is never stored');
   const stale = new ModelCatalog(gateway, home, { ttlMs: 0, request });
   failing = true;
   assert.deepEqual(await stale.models(), ['b-1', 'c-1'], 'a failed refresh keeps the last known list');
@@ -78,7 +84,7 @@ test('watch refreshes continuously and announces new and retired models', async 
   models = ['m-2'];
   for (let waited = 0; !seen.length && waited < 3000; waited += 10) await new Promise(resolve => setTimeout(resolve, 10));
   stop();
-  assert.deepEqual([seen[0].added, seen[0].removed], [['m-2'], ['m-1']]);
+  assert.deepEqual([seen[0]?.added, seen[0]?.removed], [['m-2'], ['m-1']]);
 });
 
 test('an OpenAI-compatible provider picks the live model, retries on a retired one and never leaks the key', async context => {
@@ -119,9 +125,13 @@ test('the Anthropic provider sends a system prompt and alternating roles', async
     { role: 'system', content: 'be brief' }, { role: 'user', content: 'task' }, { role: 'user', content: 'instructions' },
     { role: 'assistant', content: '{"action":"list"}' }, { role: 'user', content: 'result' },
   ]), '{"action":"graph"}');
-  assert.equal(calls[0].url, 'https://api.anthropic.com/v1/messages');
-  assert.equal(calls[0].body?.system, 'be brief');
-  assert.deepEqual((calls[0].body?.messages as { role: string }[]).map(message => message.role), ['user', 'assistant', 'user']);
+  const sent = calls[0];
+  if (!sent) throw new Error('expected an Anthropic message');
+  assert.equal(sent.url, 'https://api.anthropic.com/v1/messages');
+  const body = sent.body;
+  if (!body || !Array.isArray(body.messages)) throw new Error('expected Anthropic messages');
+  assert.equal(body.system, 'be brief');
+  assert.deepEqual((body.messages as { role: string }[]).map(message => message.role), ['user', 'assistant', 'user']);
 });
 
 test('extractJson tolerates fences and prose but leaves valid JSON alone', () => {

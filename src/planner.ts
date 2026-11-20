@@ -41,7 +41,13 @@ const overlaps = (a: string[], b: string[]) => a.some(file => owns(b, file) || b
  */
 export function mergeDependent(tasks: CodingTask[], dependsOn: Record<string, string[]>): { tasks: CodingTask[]; warnings: string[] } {
   const parent = tasks.map((_, index) => index);
-  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
+  const find = (index: number): number => {
+    const next = parent[index];
+    if (next === undefined || next === index) return index;
+    const root = find(next);
+    parent[index] = root;
+    return root;
+  };
   const join2 = (a: number, b: number) => { parent[find(a)] = find(b); };
   const warnings: string[] = [];
   tasks.forEach((task, i) => {
@@ -57,16 +63,21 @@ export function mergeDependent(tasks: CodingTask[], dependsOn: Record<string, st
     });
   });
   const groups = new Map<number, CodingTask[]>();
-  tasks.forEach((task, index) => groups.set(find(index), [...(groups.get(find(index)) ?? []), task]));
-  const merged = [...groups.values()].map((group): CodingTask => {
-    if (group.length === 1) return group[0];
+  for (const [index, task] of tasks.entries()) {
+    const root = find(index);
+    groups.set(root, [...(groups.get(root) ?? []), task]);
+  }
+  const merged = [...groups.values()].flatMap((group): CodingTask[] => {
+    const first = group[0];
+    if (!first) return [];
+    if (group.length === 1) return [first];
     const files = [...new Set(group.flatMap(task => task.files ?? []))];
-    return {
+    return [{
       id: group.map(task => task.id).join('-').slice(0, 64),
       task: group.map((task, index) => `Step ${index + 1} (${task.id}): ${task.task}`).join('\n'),
-      ...(group[0].check ? { check: group[0].check } : {}),
+      ...(first.check ? { check: first.check } : {}),
       ...(files.length ? { files } : {}),
-    };
+    }];
   });
   return { tasks: merged, warnings };
 }

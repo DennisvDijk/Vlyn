@@ -36,7 +36,8 @@ export function parseImports(content: string): ImportRef[] {
     let high = lineStarts.length - 1;
     while (low < high) {
       const mid = (low + high + 1) >> 1;
-      if (lineStarts[mid] <= index) low = mid; else high = mid - 1;
+      const startAt = lineStarts[mid];
+      if (startAt !== undefined && startAt <= index) low = mid; else high = mid - 1;
     }
     return low + 1;
   };
@@ -47,7 +48,9 @@ export function parseImports(content: string): ImportRef[] {
       const line = lineOf(start);
       const text = content.slice(lineStarts[line - 1], start).trim();
       if (text.startsWith('//') || text.startsWith('*') || text.startsWith('/*')) continue;
-      found.set(`${line}:${match[1]}`, { specifier: match[1], line });
+      const specifier = match[1];
+      if (specifier === undefined) continue;
+      found.set(`${line}:${specifier}`, { specifier, line });
     }
   }
   return [...found.values()].sort((a, b) => a.line - b.line || a.specifier.localeCompare(b.specifier));
@@ -154,9 +157,13 @@ export function findCycles(graph: ProjectGraph): string[][] {
     for (const next of adjacency.get(file) ?? []) {
       if (state.get(next) === 1) {
         const loop = stack.slice(stack.indexOf(next));
-        const start = loop.indexOf([...loop].sort()[0]);
+        const first = [...loop].sort()[0];
+        if (first === undefined) continue;
+        const start = loop.indexOf(first);
         const rotated = [...loop.slice(start), ...loop.slice(0, start)];
-        cycles.set(rotated.join('>'), [...rotated, rotated[0]]);
+        const head = rotated[0];
+        if (head === undefined) continue;
+        cycles.set(rotated.join('>'), [...rotated, head]);
       } else if (!state.has(next)) visit(next);
     }
     stack.pop();

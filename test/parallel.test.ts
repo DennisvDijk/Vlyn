@@ -64,7 +64,7 @@ test('task manifest validates ids and rejects unexpected fields', async context 
   context.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, 'tasks.json');
   await writeFile(path, JSON.stringify([{ id: 'fix', task: 'Fix it', check: 'npm test' }]));
-  assert.equal((await readTasks(path))[0].id, 'fix');
+  assert.equal((await readTasks(path))[0]?.id, 'fix');
   await writeFile(path, JSON.stringify([{ id: '../escape', task: 'Bad' }]));
   await assert.rejects(readTasks(path), /requires an id/);
   await writeFile(path, JSON.stringify([{ id: 'fix', task: 'Fix', depends: ['other'] }]));

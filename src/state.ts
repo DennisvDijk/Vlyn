@@ -66,9 +66,10 @@ function rows(state: State, observation: Observation, now: number): Row[] {
     const identity = { service, revision };
     const last = state.latestByService.get(service);
     const previous = last?.attempt.check.id === check?.id ? undefined : last;
-    if (!check) return { ...identity, status: 'unknown', details: [target.issue ?? 'No check'], previous };
+    const carried = previous ? { previous } : {};
+    if (!check) return { ...identity, status: 'unknown' as const, details: [target.issue ?? 'No check'], ...carried };
 
-    const scoped = { ...identity, contract: check.source, previous };
+    const scoped = { ...identity, contract: check.source, ...carried };
     const attempt = state.active.get(check.id);
     if (attempt && attempt.leaseUntil > now) return { ...scoped, status: 'running', details: ['Check is running'] };
     const evidence = state.checks.get(check.id);

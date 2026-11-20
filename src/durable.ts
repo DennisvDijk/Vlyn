@@ -94,14 +94,15 @@ export class Journal {
     const exact = this.db.prepare('SELECT * FROM runs WHERE id = ?').get(id);
     if (exact) return this.runFrom(exact);
     const matches = this.db.prepare('SELECT * FROM runs WHERE id LIKE ? ESCAPE \'\\\'').all(`${id.replace(/[%_\\]/gu, '\\$&')}%`);
-    return matches.length === 1 ? this.runFrom(matches[0]) : undefined;
+    const match = matches[0];
+    return matches.length === 1 && match ? this.runFrom(match) : undefined;
   }
 
   tasks(runId: string): TaskRow[] {
     return this.db.prepare('SELECT * FROM tasks WHERE run_id = ? ORDER BY position').all(runId).map(row => ({
       runId, status: row.status as TaskStatus, attempts: Number(row.attempts), worktree: String(row.worktree),
       task: { id: String(row.id), task: String(row.task), ...(row.check_command ? { check: String(row.check_command) } : {}), ...(row.files ? { files: JSON.parse(String(row.files)) as string[] } : {}) },
-      result: row.result ? JSON.parse(String(row.result)) as TaskResult : undefined,
+      ...(row.result ? { result: JSON.parse(String(row.result)) as TaskResult } : {}),
     }));
   }
 
@@ -229,7 +230,7 @@ export async function executeRun(journal: Journal, runId: string, options: {
     convergence = await converge(journal, run.id);
     say(convergence.passed ? 'Integration: all results combine cleanly and checks pass' : `Integration: ${convergence.conflicts.length} conflicts, ${convergence.checks.filter(check => check.exitCode !== 0).length} failing checks`);
   }
-  return { run: journal.run(run.id) as RunRow, tasks, convergence };
+  return { run: journal.run(run.id) as RunRow, tasks, ...(convergence ? { convergence } : {}) };
 }
 
 function shell(cwd: string, command: string): Promise<{ exitCode: number | null; output: string }> {
@@ -276,7 +277,8 @@ export async function converge(journal: Journal, runId: string): Promise<Converg
       }
       result.applied.push(row.task.id);
     } catch (cause) {
-      result.conflicts.push({ task: row.task.id, detail: (cause instanceof Error ? cause.message : String(cause)).split('\n')[0].slice(0, 300) });
+      const line = (cause instanceof Error ? cause.message : String(cause)).split('\n')[0] ?? '';
+      result.conflicts.push({ task: row.task.id, detail: line.slice(0, 300) });
     }
   }
   const commands = [...new Set(done.map(row => row.task.check).filter((command): command is string => Boolean(command)))];
