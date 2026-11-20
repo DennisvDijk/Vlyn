@@ -29,7 +29,7 @@ vlyn auto --goal "Add input validation to the CLI" --check "npm test"
 
 Repository files the agent reads are sent to the model provider you configured.
 
-Guides: [docs/README.md](docs/README.md).
+Guides: [docs/README.md](docs/README.md). Where the project is: [docs/STATE.md](docs/STATE.md).
 
 ## How a goal run works
 

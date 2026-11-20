@@ -1,6 +1,6 @@
 # Vlyn documentation
 
-Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why.
+Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why. The handoff for the next session is [STATE.md](STATE.md).
 
 ## How-to
 
