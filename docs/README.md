@@ -1,6 +1,6 @@
 # Vlyn documentation
 
-Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why. This tree has the how-to set and a command reference. The explanation note and the ADRs are not merged yet.
+Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why.
 
 ## How-to
 
@@ -14,6 +14,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 | Fail CI on an import cycle, or list tests to run | [Graph and impact in CI](how-to/graph-and-impact-in-ci.md) |
 | Check a proposed JSON body against recorded contracts | [Contract rehearsal](how-to/contract-rehearsal.md) |
 | Read `vlyn doctor` | [Troubleshoot](how-to/troubleshoot-with-doctor.md) |
+| List actor snapshots in the journal | [Actor snapshots](how-to/actor-snapshots.md) |
 | Change the code | [Contributing](how-to/contributing.md) |
 
 ## Reference
@@ -22,11 +23,11 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 
 ## Explanation
 
-Planned. `docs/research/state-of-the-art.md` is the place for the research note: memory, judgment, and confinement as analogies for how a coding run plans, remembers, and trusts a check. That file is not in this branch. When it lands, it stays an explanation. It is not a how-to.
+[Research note](research/state-of-the-art.md). Memory, judgment, and confinement are analogies for how a coding run plans, remembers, and trusts a check. It is not a how-to.
 
 ## Decisions
 
-Planned. `docs/adr/` will hold architecture decision records. None are in this branch. Feature pull requests add their own ADR next to the code they change.
+- [0001 Actor brain snapshots](adr/0001-actor-brain-snapshots.md)
 
 ## Later how-tos
 

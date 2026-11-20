@@ -12,6 +12,7 @@ import { readWorkspace } from './workspace.ts';
 import type { Check } from './workspace.ts';
 import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
+import { ActorRuntime } from './actors.ts';
 import { Journal, defaultHome, executeRun } from './durable.ts';
 import { recall } from './memory.ts';
 import { planTasks } from './planner.ts';
@@ -19,12 +20,13 @@ import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|actors|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   tui          Interactive session: state a goal, review the generated plan, watch agents work
   auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
   resume       Continue an interrupted run by id (survives crashes, closed terminals and reboots)
   runs         List durable runs
+  actors       List journaled actors (planner, coder, reviewer, verifier, supervisor)
   models       List the models your key can use; refreshed from the endpoint
   code         Work on a coding task in a project
   batch        Run independent coding tasks in isolated Git worktrees
@@ -101,6 +103,15 @@ async function main(): Promise<number> {
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
   const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
+  if (positionals[0] === 'actors') {
+    const journal = new Journal(values.home);
+    try {
+      const runtime = new ActorRuntime(journal);
+      const rows = runtime.list();
+      console.log(values.json ? JSON.stringify(rows, null, 2) : rows.length ? rows.map(actor => `${actor.id}  ${actor.role.padEnd(10)} ${actor.state.padEnd(8)} v${actor.version}`).join('\n') : 'No actors yet.');
+      return 0;
+    } finally { journal.close(); }
+  }
   if (positionals[0] === 'models') {
     if (!config || !catalog) throw new Error(`models needs an endpoint and key. ${describeSetup()}`);
     const change = values.refresh || !(await catalog.models().catch(() => undefined)) ? await catalog.refresh() : undefined;
