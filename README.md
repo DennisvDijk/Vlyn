@@ -36,7 +36,9 @@ The demo uses captured response fixtures and synthetic deployment revisions. The
 ## Development checks
 
 ```sh
-npm ci
+npm ci --ignore-scripts
 npm run check
 npm test
 ```
+
+GitHub Actions runs these checks on pull requests and pushes to `main`. The matrix covers the minimum supported Node.js version on Linux and Node.js 26 on Linux, macOS, and Windows. `CI result` combines the matrix into one status check. The tests include the CLI's plan, run, and status commands and use a simulated model response.
