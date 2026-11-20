@@ -21,13 +21,16 @@ export type TaskResult = {
 };
 export type ParallelRun = { id: string; base: string; directory: string; tasks: TaskResult[] };
 
-async function gitOutput(root: string, args: string[]): Promise<string> {
+export async function gitOutput(root: string, args: string[]): Promise<string> {
   const { stdout } = await git('git', args, { cwd: root, maxBuffer: 4_000_000, timeout: 30_000 });
   return stdout;
 }
 
 export async function readTasks(path: string): Promise<CodingTask[]> {
-  const value: unknown = JSON.parse(await readFile(path, 'utf8'));
+  return validateTasks(JSON.parse(await readFile(path, 'utf8')));
+}
+
+export function validateTasks(value: unknown): CodingTask[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) throw new Error('Task file must contain an array of 1 to 32 tasks');
   const ids = new Set<string>();
   return value.map((item: unknown): CodingTask => {
@@ -41,6 +44,25 @@ export async function readTasks(path: string): Promise<CodingTask[]> {
     ids.add(item.id);
     return { id: item.id, task: item.task, ...(item.check ? { check: item.check as string } : {}) };
   });
+}
+
+/** Run one coding task inside an existing worktree and collect its diff, changed files and verdict. */
+export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider): Promise<TaskResult> {
+  let result: CodingResult | undefined;
+  let error: string | undefined;
+  try {
+    result = await runCodingAgent({ root: worktree, task: task.task, provider, check: task.check });
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : String(cause);
+  }
+  const diff = await gitOutput(worktree, ['diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--']);
+  const tracked = await gitOutput(worktree, ['diff', '--name-only', '-z', 'HEAD', '--']);
+  const untracked = await gitOutput(worktree, ['ls-files', '--others', '--exclude-standard', '-z']);
+  const changedFiles = [...new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean))];
+  const lastCheck = result?.checks.at(-1);
+  const status = error || !result?.completed ? 'failed' :
+    !task.check || !lastCheck || lastCheck.stale ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
+  return { task, worktree, status, result, error, changedFiles, diff };
 }
 
 export async function runParallel(options: {
@@ -79,21 +101,7 @@ export async function runParallel(options: {
       if (index >= pending.length) return;
       const { task, worktree } = pending[index];
       options.onProgress?.(`Started ${task.id}`);
-      let result: CodingResult | undefined;
-      let error: string | undefined;
-      try {
-        result = await runCodingAgent({ root: worktree, task: task.task, provider: options.provider(task), check: task.check });
-      } catch (cause) {
-        error = cause instanceof Error ? cause.message : String(cause);
-      }
-      const diff = await gitOutput(worktree, ['diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--']);
-      const tracked = await gitOutput(worktree, ['diff', '--name-only', '-z', 'HEAD', '--']);
-      const untracked = await gitOutput(worktree, ['ls-files', '--others', '--exclude-standard', '-z']);
-      const changedFiles = [...new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean))];
-      const lastCheck = result?.checks.at(-1);
-      const status = error || !result?.completed ? 'failed' :
-        !task.check || !lastCheck || lastCheck.stale ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
-      const output: TaskResult = { task, worktree, status, result, error, changedFiles, diff };
+      const output = await executeTask(task, worktree, options.provider(task));
       results[index] = output;
       await writeFile(join(directory, `${task.id}.json`), JSON.stringify(output, null, 2));
       options.onProgress?.(`${task.id}: ${status}`);

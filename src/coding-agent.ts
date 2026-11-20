@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { lstat, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isObject } from './workspace.ts';
+import { dependents, dependencies, normalizeProjectPath, parseImports, scanProject } from './graph.ts';
 
 export type AgentMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 export type AgentProvider = (messages: AgentMessage[]) => Promise<string>;
@@ -16,7 +17,7 @@ const instructions = `You are a coding agent. Work only inside the supplied proj
 Return one JSON action on every turn: {"action":"list","path":"."}, {"action":"read","path":"file"},
 {"action":"replace","path":"file","old":"exact text","new":"replacement"},
 {"action":"create","path":"new file","content":"text"}, {"action":"check"},
-{"action":"graph"},
+{"action":"graph"}, {"action":"impact","path":"file"} (files that import it, transitively, plus tests to run),
 or {"action":"finish","summary":"what changed and what was verified"}.
 Read files before changing them. A replacement must match exactly once.
 Use check to run the user-specified verification command when one exists. Do not claim a check ran unless the tool result confirms it.
@@ -107,11 +108,8 @@ export async function runCodingAgent(options: {
     if (!/\.[cm]?[jt]sx?$/u.test(path)) return;
     const from = `file:${relative(root, path)}`;
     graph.edges = graph.edges.filter(edge => edge.kind !== 'imports' || edge.from !== from);
-    const lines = content.split(/\r?\n/u);
-    for (let index = 0; index < lines.length; index += 1) {
-      const match = lines[index].match(/^\s*(?:import\s+(?:[^'";]*?\s+from\s+)?|export\s+[^'";]*?\s+from\s+)["'](\.[^"']+)["']/u);
-      if (!match) continue;
-      const target = resolve(dirname(path), match[1]);
+    for (const ref of parseImports(content)) {
+      const target = resolve(dirname(path), ref.specifier);
       const targetName = relative(root, target);
       const variants = [targetName, ...['.ts', '.tsx', '.js', '.jsx'].map(ext => targetName + ext), join(targetName, 'index.ts'), join(targetName, 'index.js')];
       for (const variant of variants) {
@@ -121,7 +119,7 @@ export async function runCodingAgent(options: {
           const label = relative(root, candidate);
           const id = `file:${label}`;
           if (!graph.nodes.some(node => node.id === id)) graph.nodes.push({ id, kind: 'file', label });
-          graph.edges.push({ from, to: id, kind: 'imports', sequence: ++sequence, line: index + 1 });
+          graph.edges.push({ from, to: id, kind: 'imports', sequence: ++sequence, line: ref.line });
           break;
         } catch (error) {
           if (isObject(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) continue;
@@ -145,6 +143,20 @@ export async function runCodingAgent(options: {
         case 'graph':
           result = graph;
           break;
+        case 'impact': {
+          const path = await pathInProject(root, action.path, false);
+          const target = normalizeProjectPath(root, relative(root, path));
+          const project = await scanProject(root);
+          const importers = dependents(project, target);
+          result = {
+            file: target,
+            imported_by: importers.slice(0, 200),
+            imports: dependencies(project, target).slice(0, 200),
+            tests_to_run: importers.map(item => item.file).filter(file => /(?:^|\/)(?:tests?|__tests__)\/|\.(?:test|spec)\./u.test(file)),
+            note: 'Static relative imports only; dynamic loading and package imports are not visible.',
+          };
+          break;
+        }
         case 'list': {
           const path = await pathInProject(root, action.path, false);
           const entries = await readdir(path, { withFileTypes: true });

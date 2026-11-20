@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { existsSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -10,11 +11,23 @@ import { readWorkspace } from './workspace.ts';
 import type { Check } from './workspace.ts';
 import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
+import { Journal, executeRun } from './durable.ts';
+import { planTasks } from './planner.ts';
+import { guessCheck, runTui, board } from './tui.ts';
+import { doctorTool, graphTool, impactTool } from './tools.ts';
+import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: npm run rehearse -- <code|batch|plan|run|status> [workspace] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
+  tui          Interactive session: state a goal, review the generated plan, watch agents work
+  auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
+  resume       Continue an interrupted run by id (survives crashes, closed terminals and reboots)
+  runs         List durable runs
   code         Work on a coding task in a project
   batch        Run independent coding tasks in isolated Git worktrees
+  graph        Static import graph of a project: cycles, unresolved imports, mermaid or dot output
+  impact       Files and tests affected by a change (--file PATH, repeatable, or --since REV)
+  doctor       Check Node, Git and API key readiness
   plan         Discover deployed consumer versions and record the current inputs
   run          Check ready consumer versions in parallel
   status       Read the last observed snapshot and its evidence
@@ -22,9 +35,15 @@ const usage = `Usage: npm run rehearse -- <code|batch|plan|run|status> [workspac
   --db PATH    SQLite file (default: .rehearsal.sqlite in the workspace)
   --workers N  Concurrent checks (default: 3)
   --model NAME OpenAI model for code or optional check ordering (uses OPENAI_API_KEY)
+  --goal TEXT  Plain-language goal for auto; tasks are generated for you
+  --plan-only  With auto: print the generated tasks and stop
+  --home PATH  Journal folder (default: ~/.vlyn or VLYN_HOME)
   --task TEXT  Coding task for code
   --check CMD  Verification command for code
   --tasks PATH JSON task file for batch
+  --format F   graph output: text, json, mermaid or dot
+  --file PATH  Changed file for impact (repeatable)
+  --since REV  Use files changed since a Git revision for impact
   --json       Emit the report as JSON
   --help       Show usage
 
@@ -62,15 +81,69 @@ async function main(): Promise<number> {
     options: {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
-      tasks: { type: 'string' },
+      tasks: { type: 'string' }, goal: { type: 'string' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
-  if (values.help || !positionals.length) {
+  if (values.help || (!positionals.length && !process.stdin.isTTY)) {
     console.log(usage);
     return 0;
   }
+  const modelName = values.model ?? process.env.VLYN_MODEL;
+  const apiKey = process.env.OPENAI_API_KEY;
+  const provider = modelName && apiKey ? openAIPlanner(modelName, apiKey) : undefined;
+  if (!positionals.length || positionals[0] === 'tui') {
+    const root = await realpath(positionals[1] ?? '.');
+    const journal = new Journal(values.home);
+    try {
+      return await runTui({ input: process.stdin, output: process.stdout, journal, root, provider, workers: Number(values.workers ?? '3'), defaultCheck: values.check ?? await guessCheck(root) });
+    } finally { journal.close(); }
+  }
+  if (positionals[0] === 'runs' || positionals[0] === 'resume' || positionals[0] === 'auto') {
+    const journal = new Journal(values.home);
+    try {
+      if (positionals[0] === 'runs') {
+        const runs = journal.runs();
+        console.log(values.json ? JSON.stringify(runs, null, 2) : runs.length ? runs.map(run => `${run.id.slice(0, 8)}  ${run.status.padEnd(11)} ${display(run.goal)}`).join('\n') : 'No runs yet.');
+        return 0;
+      }
+      let runId: string;
+      if (positionals[0] === 'resume') {
+        const found = positionals[1] ? journal.run(positionals[1]) : journal.runs().find(item => item.status !== 'finished');
+        if (!found) throw new Error('No matching unfinished run. Use runs to list them.');
+        runId = found.id;
+      } else {
+        if (!values.goal?.trim()) throw new Error('auto requires --goal');
+        if (!provider) throw new Error('auto requires --model (or VLYN_MODEL) and OPENAI_API_KEY');
+        const root = await realpath(positionals[1] ?? '.');
+        const plan = await planTasks({ root, goal: values.goal, provider, check: values.check });
+        if (values['plan-only']) {
+          console.log(values.json ? JSON.stringify(plan, null, 2) : [...plan.tasks.map(task => `${task.id}: ${display(task.task)}`), ...plan.warnings.map(warning => `! ${warning}`)].join('\n'));
+          return 0;
+        }
+        const workers = Number(values.workers ?? '3');
+        runId = (await journal.create({ root, goal: values.goal, tasks: plan.tasks, workers })).id;
+        if (!values.json) console.error(`Run ${runId.slice(0, 8)} planned with ${plan.tasks.length} tasks. Resume with: vlyn resume ${runId.slice(0, 8)}`);
+      }
+      if (!provider) throw new Error('Running tasks requires --model (or VLYN_MODEL) and OPENAI_API_KEY');
+      const controller = new AbortController();
+      process.once('SIGINT', () => { controller.abort(); console.error('Finishing running tasks, then stopping. Resume later with: vlyn resume ' + runId.slice(0, 8)); });
+      const { run, tasks } = await executeRun(journal, runId, { provider: () => provider, signal: controller.signal, onEvent: values.json ? undefined : event => console.error(display(event.message)) });
+      console.log(values.json ? JSON.stringify({ run, tasks }, null, 2) : board(run, tasks).join('\n'));
+      return run.status === 'finished' && tasks.every(task => task.status === 'completed') ? 0 : 1;
+    } finally { journal.close(); }
+  }
   const [command, directory = '.'] = positionals;
+  if (command === 'graph' || command === 'impact' || command === 'doctor') {
+    if (positionals.length > 2) throw new Error(`${command} takes one directory`);
+    const format = (values.json ? 'json' : values.format ?? 'text') as GraphFormat;
+    if (!['text', 'json', 'mermaid', 'dot'].includes(format)) throw new Error('--format must be text, json, mermaid or dot');
+    const output = command === 'graph' ? await graphTool(directory, format)
+      : command === 'impact' ? await impactTool(directory, values.file ?? [], values.since)
+      : await doctorTool(directory);
+    console.log(format === 'json' ? JSON.stringify(output.json, null, 2) : output.text);
+    return output.code;
+  }
   if (command === 'batch') {
     if (positionals.length > 2 || !values.tasks || !values.model?.trim() || !process.env.OPENAI_API_KEY) {
       throw new Error('batch requires --tasks, --model and OPENAI_API_KEY');

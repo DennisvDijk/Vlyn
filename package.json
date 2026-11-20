@@ -1,10 +1,13 @@
 {
-  "name": "contract-rehearsal",
-  "version": "0.1.0",
+  "name": "vlyn",
+  "version": "0.2.0",
+  "description": "A standalone coding agent harness: goals become parallel tasks, each with its own worktree and dependency graph.",
+  "bin": { "vlyn": "src/cli.ts" },
   "private": true,
   "type": "module",
   "engines": { "node": ">=24.12.0" },
   "scripts": {
+    "vlyn": "node src/cli.ts",
     "rehearse": "node src/cli.ts",
     "demo": "node src/cli.ts run examples/payments",
     "check": "tsc --noEmit",
