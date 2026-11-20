@@ -19,21 +19,44 @@ jobs:
       id-token: write
       security-events: write
     steps:
+      # Scorecard's default token cannot ListCommits on a private repository
+      # (Resource not accessible by integration), so the action fails the job.
+      # A public repository, or ENABLE_SCORECARD=true, runs it. The SARIF upload
+      # still needs code scanning, which is the ENABLE_CODEQL gate.
+      - name: Decide whether Scorecard can read this repository
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENABLE: ${{ vars.ENABLE_SCORECARD }}
+        run: |
+          set -euo pipefail
+          visibility=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .visibility)
+          echo "Repository visibility: ${visibility}"
+          if [[ "$visibility" == "public" || "$ENABLE" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Scorecard will run."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Scorecard."
+            echo "On a private repository the default token cannot list commits."
+            echo "Set the Actions variable ENABLE_SCORECARD to true to opt in."
+            echo "A public repository runs Scorecard with no variable set."
+          fi
       - name: Check out repository
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Run Scorecard
+        if: steps.gate.outputs.run == 'true'
         uses: ossf/scorecard-action@23f22cd43608bae7a1f1fa2603d7314dee9538a5 # v2.6.0
         with:
           results_file: results.sarif
           results_format: sarif
           publish_results: false
-      # upload-sarif uses the same code scanning API as CodeQL. Skip it on a
-      # private repository unless ENABLE_CODEQL=true. The Scorecard run above
-      # still produces results.sarif in the log.
       - name: Decide whether code scanning can accept SARIF
         id: upload
+        if: steps.gate.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ENABLE: ${{ vars.ENABLE_CODEQL }}
@@ -48,7 +71,7 @@ jobs:
             echo "Skipping SARIF upload. Code scanning is not enabled for a ${visibility} repository without GitHub Code Security."
           fi
       - name: Upload SARIF
-        if: steps.upload.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && steps.upload.outputs.run == 'true'
         uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: results.sarif

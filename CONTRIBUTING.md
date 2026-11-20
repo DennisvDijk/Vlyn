@@ -35,7 +35,7 @@ The branch check to require is `CI result`.
 This repository is private, and GitHub Code Security is not enabled. Two GitHub APIs then fail closed: code scanning ("Code scanning is not enabled for this repository") and the dependency review API (`403 Forbidden`). The workflows stay, and they call those APIs only when they can succeed:
 
 - The repository is public, or
-- An Actions variable opts in: `ENABLE_CODEQL=true` for CodeQL and for the Scorecard SARIF upload, `ENABLE_DEPENDENCY_REVIEW=true` for dependency review.
+- An Actions variable opts in: `ENABLE_CODEQL=true` for CodeQL and for the Scorecard SARIF upload, `ENABLE_DEPENDENCY_REVIEW=true` for dependency review, `ENABLE_SCORECARD=true` for OpenSSF Scorecard. Scorecard's default token cannot list commits on a private repository, so the job skips unless the repository is public or that variable is set.
 
 Set the variable only after the matching GitHub feature is enabled. Making the repository public turns both on with no workflow edit and no variable.
 

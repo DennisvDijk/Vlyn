@@ -8,7 +8,7 @@ What this tree already does:
 
 - No runtime dependencies. Development dependencies are installed with `npm ci --ignore-scripts`.
 - CI audits `package-lock.json` with `npm audit --package-lock-only --audit-level=high`, including devDependencies, because those are the only packages installed. `npm audit --omit=dev` also runs and currently audits an empty production set. This is the check that works on a private repository. It consults the npm advisory database.
-- CodeQL and GitHub dependency review are in the workflows and do not run their APIs here. On a private repository without GitHub Code Security, code scanning returns "not enabled" and the dependency review API returns `403 Forbidden`. They run when the repository is public, or when the Actions variables `ENABLE_CODEQL` and `ENABLE_DEPENDENCY_REVIEW` are set to `true` after those features are turned on. Scorecard still runs on its schedule; its SARIF upload uses the same code-scanning gate as CodeQL.
+- CodeQL and GitHub dependency review are in the workflows and do not run their APIs here. On a private repository without GitHub Code Security, code scanning returns "not enabled" and the dependency review API returns `403 Forbidden`. They run when the repository is public, or when the Actions variables `ENABLE_CODEQL` and `ENABLE_DEPENDENCY_REVIEW` are set to `true` after those features are turned on. OpenSSF Scorecard skips on a private repository unless `ENABLE_SCORECARD=true`, because the default token cannot list commits. Its SARIF upload uses the same code-scanning gate as CodeQL.
 - Model keys stay out of the journal and out of error text in the provider code that exists today.
 - File access for the agent refuses absolute paths, `..`, and symbolic links.
 
