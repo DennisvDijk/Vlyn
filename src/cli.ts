@@ -14,19 +14,20 @@ import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
 import { ActorRuntime } from './actors.ts';
 import { Journal, defaultHome, executeRun } from './durable.ts';
-import { recall } from './memory.ts';
+import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
 import { planTasks } from './planner.ts';
 import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|actors|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   tui          Interactive session: state a goal, review the generated plan, watch agents work
   auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
   resume       Continue an interrupted run by id (survives crashes, closed terminals and reboots)
   runs         List durable runs
   actors       List journaled actors (planner, coder, reviewer, verifier, supervisor)
+  lessons      Distill repeated failures into claims. --apply writes the marked section of AGENTS.md
   models       List the models your key can use; refreshed from the endpoint
   code         Work on a coding task in a project
   batch        Run independent coding tasks in isolated Git worktrees
@@ -51,6 +52,7 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|models|code|batch|graph|
   --format F   graph output: text, json, mermaid or dot
   --file PATH  Changed file for impact (repeatable)
   --since REV  Use files changed since a Git revision for impact
+    --apply      With lessons: write the suggestion into AGENTS.md (off unless you pass this)
   --json       Emit the report as JSON
   --help       Show usage
 
@@ -89,7 +91,7 @@ async function main(): Promise<number> {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
-      json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      json: { type: 'boolean' }, apply: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -109,6 +111,16 @@ async function main(): Promise<number> {
       const runtime = new ActorRuntime(journal);
       const rows = runtime.list();
       console.log(values.json ? JSON.stringify(rows, null, 2) : rows.length ? rows.map(actor => `${actor.id}  ${actor.role.padEnd(10)} ${actor.state.padEnd(8)} v${actor.version}`).join('\n') : 'No actors yet.');
+      return 0;
+    } finally { journal.close(); }
+  }
+  if (positionals[0] === 'lessons') {
+    const root = await realpath(positionals[1] ?? '.');
+    const journal = new Journal(values.home);
+    try {
+      const lessons = new LessonStore(journal).consolidate(root);
+      if (values.apply) await applySuggestion(root, lessons);
+      console.log(suggestion(lessons));
       return 0;
     } finally { journal.close(); }
   }
@@ -156,7 +168,7 @@ async function main(): Promise<number> {
         needModel('auto');
         const root = await realpath(positionals[1] ?? '.');
         const plan = await planTasks({
-          root, goal: values.goal, provider: needModel('auto'), memory: recall(journal, root, values.goal),
+          root, goal: values.goal, provider: needModel('auto'), memory: planningMemory(journal, root, values.goal),
           ...(values.check ? { check: values.check } : {}),
         });
         if (values['plan-only']) {

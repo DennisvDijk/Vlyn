@@ -6,7 +6,7 @@
 
 **A coding tool: one goal becomes parallel tasks, each checked, each in its own git worktree.**
 
-The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal. Lessons, a decision journal, and the sandbox are **planned**. What runs today is the planner, the journal, actor snapshots, and verdicts that follow the check.
+The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, and repeated failures become lessons the next plan can see. A decision journal and the sandbox are **planned**. What runs today is the planner, the journal, actor snapshots, lessons, and verdicts that follow the check.
 
 No runtime dependencies. Node.js and Git.
 
@@ -72,6 +72,10 @@ A task agent can be an actor in the journal: a versioned snapshot of its working
 
 `vlyn actors` lists them. A goal run does not create the rows. Guide: [docs/how-to/actor-snapshots.md](docs/how-to/actor-snapshots.md). The user's checkout is still not where edits land.
 
+## Lessons
+
+Repeated failed or out-of-scope edits become claims in the journal (`unverified`, then `supported` if they happen again). A later clean edit marks a claim `contested`. A retracted claim stays stored and is not put back into the plan. `vlyn lessons` prints a suggestion. It writes `AGENTS.md` only with `--apply`, and only inside a marked section. Stale claims lose weight when the failures that supported them are gone. The weight is an engineering choice, not a fitted forgetting curve. Guide: [docs/how-to/lessons.md](docs/how-to/lessons.md).
+
 ## Limitations
 
 These are limits of the code on this branch, not a roadmap in disguise.
@@ -82,7 +86,7 @@ These are limits of the code on this branch, not a roadmap in disguise.
 - Convergence builds an `_integration` worktree and stops. There is no `vlyn apply`. Copy or cherry-pick the result yourself. Your checkout stays where it was.
 - File ownership is whatever the model declared. Overlap is merged. Semantic independence is not proved.
 - The import graph is JavaScript and TypeScript relative imports only. Dynamic imports and package imports are invisible. The default text format and `--format json` exit 2 on a cycle. Mermaid and dot exit 0. Treat the graph as a lower bound.
-- Memory is recall of earlier task rows in this repository, capped at five items and about 2 KB. Turning those rows into reviewed `AGENTS.md` lessons is planned.
+- Memory is recall of earlier task rows plus lesson claims, capped at five items and about 2 KB. `vlyn lessons` prints the suggestion. `--apply` writes only the marked section of `AGENTS.md`.
 - A decision journal and `vlyn eval` are planned.
 - Cross-repository reasoning is planned.
 - Nothing here has been scored against a live model in CI. Tests use scripted replies.
