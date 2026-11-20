@@ -1,0 +1,5 @@
+{
+  "service": "export-worker",
+  "revision": "export-v2",
+  "expects": [{ "path": ["account_id"], "type": "string" }]
+}

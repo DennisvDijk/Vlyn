@@ -1,0 +1,9 @@
+{
+  "environment": "staging",
+  "inventory": "complete",
+  "consumers": [
+    { "service": "billing", "revision": "billing-v3" },
+    { "service": "export-worker", "revision": "export-v1" },
+    { "service": "reports-worker", "revision": "reports-v2" }
+  ]
+}

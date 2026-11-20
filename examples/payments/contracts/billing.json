@@ -1,0 +1,5 @@
+{
+  "service": "billing",
+  "revision": "billing-v3",
+  "expects": [{ "path": ["total"], "type": "number" }]
+}
