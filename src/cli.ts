@@ -14,13 +14,14 @@ import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
 import { ActorRuntime } from './actors.ts';
 import { Journal, defaultHome, executeRun } from './durable.ts';
+import { runEval } from './eval.ts';
 import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
 import { planTasks } from './planner.ts';
 import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   tui          Interactive session: state a goal, review the generated plan, watch agents work
   auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
@@ -28,6 +29,7 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|models|code|batc
   runs         List durable runs
   actors       List journaled actors (planner, coder, reviewer, verifier, supervisor)
   lessons      Distill repeated failures into claims. --apply writes the marked section of AGENTS.md
+  eval         Score a scripted local suite: pass rate, verdict honesty, Brier score. No network
   models       List the models your key can use; refreshed from the endpoint
   code         Work on a coding task in a project
   batch        Run independent coding tasks in isolated Git worktrees
@@ -105,6 +107,11 @@ async function main(): Promise<number> {
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
   const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
+  if (positionals[0] === 'eval') {
+    const report = await runEval();
+    console.log(values.json ? JSON.stringify(report, null, 2) : [report.note, ...report.cases.map(item => `${item.passed && item.honest ? 'ok  ' : 'FAIL'} ${item.id}  ${item.status}  confidence ${item.confidence}`), `pass ${report.summary.passRate} · honesty ${report.summary.honestyRate} · brier ${report.summary.brier} · tokens ${report.summary.estimatedTokens}`].join('\n'));
+    return report.summary.passRate === 1 && report.summary.honestyRate === 1 ? 0 : 1;
+  }
   if (positionals[0] === 'actors') {
     const journal = new Journal(values.home);
     try {

@@ -19,7 +19,7 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 11 | Cross-repository and deployed-service reasoning (repos, Terraform, YAML, Kubernetes as nodes and edges) | later | Vlyn's main differentiator; not built |
 | 12 | Native tool calling per vendor; Gemini and Bedrock without a gateway | later | |
 | 13 | GitLab CI alongside GitHub Actions | later | Requested for the wider project 2026-11-17 |
-| 14 | Decision journal and `vlyn eval`: confidence recorded before the verdict, Brier score, honesty rate | in PR #7 | Coding outcome: a vain 0.9 cannot hide a failed check. Scripted suite only; no live endpoint in CI. See docs/research/state-of-the-art.md |
+| 14 | Decision journal and `vlyn eval`: confidence recorded before the verdict, Brier score, honesty rate | done (PR #7) | `src/decision.ts`, `src/eval.ts`. Scripted suite only. Does not close phase 9 |
 | 15 | Lesson store: consolidation, decay, reconsolidation, claim status, reviewed `AGENTS.md` suggestion | done (PR #6) | `src/lessons.ts`. Folds phase 8. `vlyn lessons` prints a suggestion. `--apply` writes only the marked section of AGENTS.md |
 | 16 | Actor brain snapshots in the journal: pool, resume, revert, fork, one-for-one supervisor, role templates | done (PR #5) | `src/actors.ts`, `src/actor-coding.ts`, ADR 0001. `vlyn actors` lists rows. A goal run does not create them. No Substrate dependency. Git worktrees still hold the files |
 | 17 | Pre-mortem gate, after-action note, `vlyn converge`, apply onto a named new branch | in PR #8 | Folds phase 10. Outcome: ambiguous plans do not edit; apply never checks out the user's branch |

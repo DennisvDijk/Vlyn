@@ -6,7 +6,7 @@
 
 **A coding tool: one goal becomes parallel tasks, each checked, each in its own git worktree.**
 
-The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, and repeated failures become lessons the next plan can see. A decision journal and the sandbox are **planned**. What runs today is the planner, the journal, actor snapshots, lessons, and verdicts that follow the check.
+The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, repeated failures become lessons the next plan can see, and `vlyn eval` scores scripted verdicts. The sandbox is **planned**. What runs today is the planner, the journal, actor snapshots, lessons, the scripted eval, and verdicts that follow the check.
 
 No runtime dependencies. Node.js and Git.
 
@@ -76,6 +76,10 @@ A task agent can be an actor in the journal: a versioned snapshot of its working
 
 Repeated failed or out-of-scope edits become claims in the journal (`unverified`, then `supported` if they happen again). A later clean edit marks a claim `contested`. A retracted claim stays stored and is not put back into the plan. `vlyn lessons` prints a suggestion. It writes `AGENTS.md` only with `--apply`, and only inside a marked section. Stale claims lose weight when the failures that supported them are gone. The weight is an engineering choice, not a fitted forgetting curve. Guide: [docs/how-to/lessons.md](docs/how-to/lessons.md).
 
+## Eval
+
+`vlyn eval` runs a small scripted suite in temporary repositories. It reports how many verdicts matched the case, whether `completed` was used only when the last check passed after the last edit and inside the owned files, and a [Brier score](https://doi.org/10.1175/1520-0493(1950)078%3C0001:VOFEIT%3E2.0.CO;2) of confidences that were recorded before those verdicts. The suite does not call a model. Tokens are a character estimate. Cost is null. The committed numbers are in [docs/evals/baseline.json](docs/evals/baseline.json). They measure the harness, not a live model. Guide: [docs/how-to/eval.md](docs/how-to/eval.md).
+
 ## Limitations
 
 These are limits of the code on this branch, not a roadmap in disguise.
@@ -87,7 +91,7 @@ These are limits of the code on this branch, not a roadmap in disguise.
 - File ownership is whatever the model declared. Overlap is merged. Semantic independence is not proved.
 - The import graph is JavaScript and TypeScript relative imports only. Dynamic imports and package imports are invisible. The default text format and `--format json` exit 2 on a cycle. Mermaid and dot exit 0. Treat the graph as a lower bound.
 - Memory is recall of earlier task rows plus lesson claims, capped at five items and about 2 KB. `vlyn lessons` prints the suggestion. `--apply` writes only the marked section of `AGENTS.md`.
-- A decision journal and `vlyn eval` are planned.
+- `vlyn eval` scores a scripted suite. It does not score a live model.
 - Cross-repository reasoning is planned.
 - Nothing here has been scored against a live model in CI. Tests use scripted replies.
 

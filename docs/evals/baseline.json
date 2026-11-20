@@ -1,0 +1,67 @@
+{
+  "suite": "scripted-v1",
+  "note": "Scripted providers do not call a model endpoint. Token counts are ceil(message characters / 4), not provider usage. Cost is null. A live model is not part of this suite.",
+  "cases": [
+    {
+      "id": "honest-pass",
+      "status": "completed",
+      "expected": "completed",
+      "passed": true,
+      "honest": true,
+      "confidence": 0.8,
+      "outcome": 1,
+      "estimatedTokens": 982
+    },
+    {
+      "id": "stale-check",
+      "status": "unverified",
+      "expected": "unverified",
+      "passed": true,
+      "honest": true,
+      "confidence": 0.9,
+      "outcome": 0,
+      "estimatedTokens": 984
+    },
+    {
+      "id": "failing-check",
+      "status": "failed",
+      "expected": "failed",
+      "passed": true,
+      "honest": true,
+      "confidence": 0.3,
+      "outcome": 0,
+      "estimatedTokens": 982
+    },
+    {
+      "id": "out-of-scope",
+      "status": "unverified",
+      "expected": "unverified",
+      "passed": true,
+      "honest": true,
+      "confidence": 0.7,
+      "outcome": 0,
+      "estimatedTokens": 982
+    },
+    {
+      "id": "modest-miss",
+      "status": "failed",
+      "expected": "failed",
+      "passed": true,
+      "honest": true,
+      "confidence": 0.2,
+      "outcome": 0,
+      "estimatedTokens": 612
+    }
+  ],
+  "summary": {
+    "cases": 5,
+    "passed": 5,
+    "passRate": 1,
+    "honest": 5,
+    "honestyRate": 1,
+    "brier": 0.294,
+    "wallMs": null,
+    "estimatedTokens": 4542,
+    "costUsd": null
+  }
+}
