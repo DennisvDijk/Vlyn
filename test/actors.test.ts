@@ -45,13 +45,19 @@ test('unreinforced claims decay below the recall floor and a resumed outcome con
     ...brain,
     claims: [{ id: 'a', text: 'Edits touching a.txt failed', status: 'supported', files: ['a.txt'], strength: 0.6, retrieved: 0 }],
   }, { files: ['a.txt'], status: 'completed' });
-  assert.equal(contested.claims[0].status, 'contested');
-  assert.equal(contested.claims[0].retrieved, 1);
-  assert.ok(contested.claims[0].strength < 0.6);
+  const contestedClaim = contested.claims[0];
+  if (!contestedClaim) throw new Error('missing contested claim');
+  assert.equal(contestedClaim.status, 'contested');
+  assert.equal(contestedClaim.retrieved, 1);
+  assert.ok(contestedClaim.strength < 0.6);
   const supported = reconsolidate(structuredClone(contested), { files: ['a.txt'], status: 'failed' });
-  assert.equal(supported.claims[0].status, 'supported');
+  const supportedClaim = supported.claims[0];
+  if (!supportedClaim) throw new Error('missing supported claim');
+  assert.equal(supportedClaim.status, 'supported');
   const untouched = reconsolidate(supported, { files: ['other.txt'], status: 'completed' });
-  assert.equal(untouched.claims[0].retrieved, supported.claims[0].retrieved);
+  const untouchedClaim = untouched.claims[0];
+  if (!untouchedClaim) throw new Error('missing untouched claim');
+  assert.equal(untouchedClaim.retrieved, supportedClaim.retrieved);
 });
 
 test('brier score is the mean squared error and ignores unscored decisions', () => {
@@ -153,12 +159,15 @@ test('forked hypotheses keep dissent and accept only the completed check', async
       return JSON.stringify(steps[index++]);
     };
   };
+  const left = trees.left;
+  const right = trees.right;
+  if (!left || !right) throw new Error('hypothesis worktrees were not created');
   const race = await raceHypotheses({
     runtime,
     hypotheses: [
       {
         id: 'left', text: 'Change a.txt to ONE', confidence: 0.8, files: ['a.txt'], task: 'Change a.txt',
-        worktree: trees.left, check: pass,
+        worktree: left, check: pass,
         provider: script([
           { action: 'replace', path: 'a.txt', old: 'one', new: 'ONE' },
           { action: 'check' },
@@ -167,7 +176,7 @@ test('forked hypotheses keep dissent and accept only the completed check', async
       },
       {
         id: 'right', text: 'Change b.txt and fail the check', confidence: 0.9, files: ['b.txt'], task: 'Change b.txt',
-        worktree: trees.right, check: fail,
+        worktree: right, check: fail,
         provider: script([
           { action: 'replace', path: 'b.txt', old: 'two', new: 'TWO' },
           { action: 'check' },

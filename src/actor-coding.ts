@@ -74,12 +74,13 @@ export async function raceHypotheses(options: {
   options.runtime.checkpoint(verifier.actor.id, verifierBrain, { sleep: false });
   options.runtime.ack(messages.map(message => message.id));
   const accepted = results.find(result => result.status === 'completed')?.hypothesisId;
+  const brier = brierScore(options.runtime.brain(verifier.actor.id).decisions);
   return {
     plannerId: planner.actor.id,
     plannerVersion,
     ...(accepted ? { accepted } : {}),
     dissent: results.filter(result => result.hypothesisId !== accepted).map(result => result.hypothesisId),
     results,
-    brier: brierScore(options.runtime.brain(verifier.actor.id).decisions),
+    ...(brier !== undefined ? { brier } : {}),
   };
 }
