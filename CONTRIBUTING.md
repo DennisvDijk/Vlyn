@@ -28,9 +28,25 @@ Keep file access inside the project: no symbolic links, no paths outside the roo
 
 ## CI
 
-GitHub Actions runs lint and typecheck once, tests on Linux, macOS, and Windows for Node 24 and Node 26, and a coverage job. Actions are pinned to commit SHAs. `permissions` stay read-only except where CodeQL, Scorecard, or provenance must write. Dependabot updates npm and Actions weekly. A provenance workflow packs a tarball and attests it. It does not `npm publish`: the package is `"private": true`, so npm provenance is not available yet.
+GitHub Actions runs lint and typecheck once, tests on Linux, macOS, and Windows for Node 24 and Node 26, audits the lockfile, and runs a coverage job. Actions are pinned to commit SHAs. `permissions` stay read-only except where CodeQL, Scorecard, or provenance must write. Dependabot updates npm and Actions weekly. A provenance workflow packs a tarball and attests it. It does not `npm publish`: the package is `"private": true`, so npm provenance is not available yet.
 
 The branch check to require is `CI result`.
+
+This repository is private, and GitHub Code Security is not enabled. Two GitHub APIs then fail closed: code scanning ("Code scanning is not enabled for this repository") and the dependency review API (`403 Forbidden`). The workflows stay, and they call those APIs only when they can succeed:
+
+- The repository is public, or
+- An Actions variable opts in: `ENABLE_CODEQL=true` for CodeQL and for the Scorecard SARIF upload, `ENABLE_DEPENDENCY_REVIEW=true` for dependency review.
+
+Set the variable only after the matching GitHub feature is enabled. Making the repository public turns both on with no workflow edit and no variable.
+
+Until then, the dependency check that actually runs is `npm audit` against the lockfile, in the `Audit dependencies` job:
+
+```sh
+npm audit --package-lock-only --omit=dev --audit-level=high
+npm audit --package-lock-only --audit-level=high
+```
+
+`--omit=dev` is the production slice. This package has no production dependencies, so that command audits nothing. The second command audits the toolchain devDependencies, which is the whole lockfile, and fails on high or critical npm advisories. It uses the npm advisory database, not GitHub's dependency graph. A high advisory that exists only in GitHub's graph is invisible until dependency review is allowed to run.
 
 ## Commits
 

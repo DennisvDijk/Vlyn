@@ -15,11 +15,39 @@ jobs:
       contents: read
       pull-requests: read
     steps:
+      # actions/dependency-review-action calls the dependency review API.
+      # On this private repository that API returns 403 Forbidden unless
+      # GitHub Code Security is enabled. The lockfile check that always runs
+      # is the "Audit dependencies" job in ci.yml (npm audit). This job stays
+      # so a public repository, or ENABLE_DEPENDENCY_REVIEW=true, uses the
+      # GitHub API again without a workflow edit.
+      - name: Decide whether the dependency review API is available
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENABLE: ${{ vars.ENABLE_DEPENDENCY_REVIEW }}
+        run: |
+          set -euo pipefail
+          visibility=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .visibility)
+          echo "Repository visibility: ${visibility}"
+          if [[ "$visibility" == "public" || "$ENABLE" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Dependency review will call the GitHub API."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping dependency review."
+            echo "The dependency review API is forbidden on a ${visibility} repository without GitHub Code Security."
+            echo "npm audit in the CI workflow is the check that runs instead."
+            echo "Set the Actions variable ENABLE_DEPENDENCY_REVIEW to true after that feature is enabled."
+            echo "A public repository runs this action with no variable set."
+          fi
       - name: Check out repository
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Review dependencies
+        if: steps.gate.outputs.run == 'true'
         uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: high

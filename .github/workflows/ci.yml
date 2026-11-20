@@ -83,6 +83,27 @@ jobs:
           path: junit.xml
           if-no-files-found: ignore
 
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Audit the lockfile
+        run: |
+          echo "Production dependencies only (npm audit --omit=dev). This package has none today."
+          npm audit --package-lock-only --omit=dev --audit-level=high
+          echo "Full lockfile, including toolchain devDependencies."
+          npm audit --package-lock-only --audit-level=high
+
   coverage:
     name: Coverage
     runs-on: ubuntu-24.04
@@ -105,7 +126,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [lint, typecheck, test, coverage]
+    needs: [lint, typecheck, test, audit, coverage]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
@@ -115,5 +136,6 @@ jobs:
           LINT: ${{ needs.lint.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
           TEST: ${{ needs.test.result }}
+          AUDIT: ${{ needs.audit.result }}
           COVERAGE: ${{ needs.coverage.result }}
-        run: test "$LINT" = success && test "$TYPECHECK" = success && test "$TEST" = success && test "$COVERAGE" = success
+        run: test "$LINT" = success && test "$TYPECHECK" = success && test "$TEST" = success && test "$AUDIT" = success && test "$COVERAGE" = success

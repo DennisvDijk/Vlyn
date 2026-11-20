@@ -19,7 +19,7 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 11 | Cross-repository and deployed-service reasoning (repos, Terraform, YAML, Kubernetes as nodes and edges) | later | Vlyn's main differentiator; not built |
 | 12 | Native tool calling per vendor; Gemini and Bedrock without a gateway | later | |
 | 13 | GitLab CI alongside GitHub Actions | later | Requested for the wider project 2026-11-17 |
-| 19 | Toolchain: TypeScript 7 strict flags, Biome, split CI, supply-chain workflows | in PR | Node 24 and 26 on three OS. `isolatedDeclarations` off while the package is private and `noEmit`. No npm publish |
+| 19 | Toolchain: TypeScript 7 strict flags, Biome, split CI, supply-chain workflows | in PR | Node 24 and 26 on three OS. `isolatedDeclarations` off while the package is private and `noEmit`. No npm publish. CodeQL and dependency review run only for a public repo or when `ENABLE_CODEQL` / `ENABLE_DEPENDENCY_REVIEW` is set. Private CI uses `npm audit` on the lockfile |
 
 ## Working together (people and bots)
 

@@ -24,15 +24,43 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # CodeQL's upload calls the code scanning API. On a private repository that
+      # API answers "Code scanning is not enabled" unless GitHub Code Security is
+      # turned on, and the analyze step then fails. A public repository has the
+      # API. ENABLE_CODEQL=true is the opt-in for a private repository that has
+      # the feature. Either way the workflow file stays, so making the repo
+      # public turns analysis on without an edit.
+      - name: Decide whether code scanning can accept results
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENABLE: ${{ vars.ENABLE_CODEQL }}
+        run: |
+          set -euo pipefail
+          visibility=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .visibility)
+          echo "Repository visibility: ${visibility}"
+          if [[ "$visibility" == "public" || "$ENABLE" == "true" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "CodeQL will upload results."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping CodeQL."
+            echo "Code scanning is not available on a ${visibility} repository without GitHub Code Security."
+            echo "Set the Actions variable ENABLE_CODEQL to true after that feature is enabled."
+            echo "A public repository runs CodeQL with no variable set."
+          fi
       - name: Check out repository
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Initialize CodeQL
+        if: steps.gate.outputs.run == 'true'
         uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           languages: javascript-typescript
       - name: Analyze
+        if: steps.gate.outputs.run == 'true'
         uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           category: /language:javascript-typescript
