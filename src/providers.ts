@@ -178,14 +178,63 @@ function anthropicMessages(messages: AgentMessage[]): { system: string; messages
   return { system, messages: merged };
 }
 
+type ToolSpec = { name: string; description: string; properties: Record<string, { type: string; description: string }>; required: string[] };
+
+/** One coding action. Sent as a native tool. A text JSON action remains the fallback. */
+export const codingTools: ToolSpec[] = [
+  { name: 'list', description: 'List a project directory', properties: { path: { type: 'string', description: 'Relative directory' } }, required: ['path'] },
+  { name: 'read', description: 'Read a project file', properties: { path: { type: 'string', description: 'Relative file' } }, required: ['path'] },
+  { name: 'replace', description: 'Replace one exact text match in a file', properties: { path: { type: 'string', description: 'Relative file' }, old: { type: 'string', description: 'Exact text that appears once' }, new: { type: 'string', description: 'Replacement text' } }, required: ['path', 'old', 'new'] },
+  { name: 'create', description: 'Create a new text file', properties: { path: { type: 'string', description: 'Relative file' }, content: { type: 'string', description: 'File text' } }, required: ['path', 'content'] },
+  { name: 'check', description: 'Run the user-supplied verification command', properties: {}, required: [] },
+  { name: 'graph', description: 'Return the task graph recorded so far', properties: {}, required: [] },
+  { name: 'impact', description: 'List importers and tests for a file', properties: { path: { type: 'string', description: 'Relative file' } }, required: ['path'] },
+  { name: 'finish', description: 'Stop and report what changed and what was verified', properties: { summary: { type: 'string', description: 'What changed and what was verified' } }, required: ['summary'] },
+];
+
+function openAITools() {
+  return codingTools.map(tool => ({
+    type: 'function',
+    function: { name: tool.name, description: tool.description, parameters: { type: 'object', properties: tool.properties, required: tool.required, additionalProperties: false } },
+  }));
+}
+
+function anthropicTools() {
+  return codingTools.map(tool => ({ name: tool.name, description: tool.description, input_schema: { type: 'object', properties: tool.properties, required: tool.required } }));
+}
+
+function actionFromArguments(name: string, args: unknown): string {
+  if (args === undefined || args === '') return JSON.stringify({ action: name });
+  const parsed = typeof args === 'string' ? JSON.parse(args) as unknown : args;
+  if (!isObject(parsed)) throw new Error('Tool arguments must be an object');
+  return JSON.stringify({ action: name, ...parsed });
+}
+
+function toolAction(kind: ProviderKind, body: unknown): string | undefined {
+  if (kind === 'anthropic') {
+    const content = isObject(body) && Array.isArray(body.content) ? body.content : [];
+    const block = content.find((item: unknown) => isObject(item) && item.type === 'tool_use' && typeof item.name === 'string');
+    if (!isObject(block)) return undefined;
+    return actionFromArguments(block.name as string, block.input ?? {});
+  }
+  const choice = isObject(body) && Array.isArray(body.choices) ? body.choices[0] as unknown : undefined;
+  const message = isObject(choice) ? choice.message : undefined;
+  const calls = isObject(message) && Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const call = calls[0];
+  if (!isObject(call) || !isObject(call.function) || typeof call.function.name !== 'string') return undefined;
+  return actionFromArguments(call.function.name, call.function.arguments ?? '{}');
+}
+
 /**
  * A provider for any configured system. With model `auto` it follows the live model list: if the chosen model is
  * rejected or retired, it refreshes the list, chooses again and retries once.
+ * `tools: true` asks for native tool calls. A text JSON action is used when the model or gateway does not.
  */
-export function createProvider(config: ProviderConfig, options: { catalog?: ModelCatalog; request?: Fetch } = {}): AgentProvider {
+export function createProvider(config: ProviderConfig, options: { catalog?: ModelCatalog; request?: Fetch; tools?: boolean } = {}): AgentProvider {
   const request = options.request ?? fetch;
-  let pinned = config.model === 'auto' ? undefined : config.model;
+  const pinned = config.model === 'auto' ? undefined : config.model;
   let jsonMode = config.kind === 'openai';
+  let tools = options.tools === true;
 
   const resolve = async (refresh = false): Promise<string> => {
     if (pinned) return pinned;
@@ -201,10 +250,14 @@ export function createProvider(config: ProviderConfig, options: { catalog?: Mode
     const common = { headers: headers(config), method: 'POST', redirect: 'error', signal: AbortSignal.timeout(120_000) } as const;
     if (config.kind === 'anthropic') {
       const converted = anthropicMessages(messages);
-      return request(`${config.baseUrl}/messages`, { ...common, body: JSON.stringify({ model, max_tokens: 8192, system: converted.system, messages: converted.messages }) });
+      return request(`${config.baseUrl}/messages`, { ...common, body: JSON.stringify({ model, max_tokens: 8192, system: converted.system, messages: converted.messages, ...(tools ? { tools: anthropicTools() } : {}) }) });
     }
     return request(`${config.baseUrl}/chat/completions`, {
-      ...common, body: JSON.stringify({ model, messages, ...(jsonMode ? { response_format: { type: 'json_object' } } : {}), store: false }),
+      ...common, body: JSON.stringify({
+        model, messages, store: false,
+        ...(jsonMode && !tools ? { response_format: { type: 'json_object' } } : {}),
+        ...(tools ? { tools: openAITools(), tool_choice: 'auto' } : {}),
+      }),
     });
   };
 
@@ -213,13 +266,21 @@ export function createProvider(config: ProviderConfig, options: { catalog?: Mode
     let retried = false;
     for (;;) {
       let response = await send(model, messages);
-      if (!response.ok && response.status === 400 && jsonMode) {
-        // Some gateways and local servers reject JSON mode; fall back to plain text and extract the JSON.
+      if (!response.ok && response.status === 400) {
         const detail = await response.clone().text();
-        if (/response_format|json_object|json mode/iu.test(detail)) { jsonMode = false; response = await send(model, messages); }
+        if (tools && /tool|function/iu.test(detail)) { tools = false; response = await send(model, messages); }
+        else if (jsonMode && /response_format|json_object|json mode/iu.test(detail)) { jsonMode = false; response = await send(model, messages); }
       }
       if (response.ok) {
         const body: unknown = await response.json();
+        if (tools) {
+          try {
+            const fromTool = toolAction(config.kind, body);
+            if (fromTool) return fromTool;
+          } catch (error) {
+            throw new Error(error instanceof Error ? error.message : 'Tool arguments were not JSON');
+          }
+        }
         let text: unknown;
         if (config.kind === 'anthropic') {
           const block = isObject(body) && Array.isArray(body.content) ? body.content.find((item: unknown) => isObject(item) && item.type === 'text') as unknown : undefined;
