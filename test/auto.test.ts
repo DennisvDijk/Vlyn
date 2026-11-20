@@ -16,26 +16,57 @@ const edit = (path: string, from: string, to: string) => [
   { action: 'read', path }, { action: 'replace', path, old: from, new: to }, { action: 'check' }, { action: 'finish', summary: `edited ${path}` },
 ];
 
-test('a plain-language goal becomes validated tasks with the check applied and overlaps flagged', async context => {
+test('a plain-language goal becomes a spec and tasks with owned files; overlapping tasks are merged', async context => {
   const root = await gitRepo(context, files);
   let sent = '';
   const plan = await planTasks({
     root, goal: 'Rename alpha and beta', check: pass,
     provider: async messages => {
       sent = messages[1].content;
-      return JSON.stringify({ tasks: [
-        { id: 'alpha', task: 'Change alpha', files: ['a.txt'] },
-        { id: 'beta', task: 'Change beta', files: ['a.txt', 'b.txt'] },
-      ] });
+      return JSON.stringify({
+        spec: { non_goals: ['no new files'], assumptions: ['a.txt is plain text'], acceptance: ['both renamed'], risks: [] },
+        tasks: [
+          { id: 'alpha', task: 'Change alpha', files: ['a.txt'] },
+          { id: 'beta', task: 'Change beta', files: ['a.txt', 'b.txt'] },
+          { id: 'util', task: 'Tidy util', files: ['src/util.ts'] },
+        ],
+      });
     },
   });
   assert.match(sent, /a\.txt/u);
   assert.match(sent, /most_imported_files/u);
-  assert.deepEqual(plan.tasks.map(task => [task.id, task.check]), [['alpha', pass], ['beta', pass]]);
-  assert.match(plan.warnings[0], /alpha and beta both expect to change a\.txt/u);
-  await assert.rejects(planTasks({ root, goal: 'x', provider: async () => '{"tasks":[]}' }), /1 to 32 tasks/u);
+  assert.deepEqual(plan.tasks.map(task => task.id), ['alpha-beta', 'util']);
+  assert.deepEqual(plan.tasks[0].files?.slice().sort(), ['a.txt', 'b.txt']);
+  assert.equal(plan.tasks[0].check, pass);
+  assert.deepEqual(plan.spec.nonGoals, ['no new files']);
+  assert.deepEqual(plan.spec.acceptance, ['both renamed']);
+  await assert.rejects(planTasks({ root, goal: 'x', provider: async () => '{"tasks":[]}' }), /1 to 32 tasks|1 to \d+ tasks/u);
   await assert.rejects(planTasks({ root, goal: 'x', provider: async () => 'nope' }), /invalid JSON/u);
-  await assert.rejects(planTasks({ root, goal: 'x', maxTasks: 1, provider: async () => JSON.stringify({ tasks: [{ id: 'a', task: 'a' }, { id: 'b', task: 'b' }] }) }), /limit is 1/u);
+  await assert.rejects(planTasks({ root, goal: 'x', maxTasks: 1, provider: async () => JSON.stringify({ tasks: [{ id: 'a', task: 'a', files: ['a.txt'] }, { id: 'b', task: 'b', files: ['b.txt'] }] }) }), /limit is 1/u);
+});
+
+test('edits outside a task\'s owned files are not verified, and converging combines results and reports conflicts', async context => {
+  const root = await gitRepo(context, files);
+  const { journal } = await openJournal(context);
+  const spec = { goal: 'Edit', nonGoals: [], assumptions: [], acceptance: ['both edited'], risks: [] };
+  const run = await journal.create({ root, goal: 'Edit', workers: 2, spec, tasks: [
+    { id: 'one', task: 'Change alpha', check: pass, files: ['a.txt'] },
+    { id: 'two', task: 'Change beta', check: pass, files: ['b.txt'] },
+  ] });
+  assert.deepEqual(journal.tasks(run.id).map(row => row.task.files), [['a.txt'], ['b.txt']]);
+  assert.deepEqual(journal.spec(run.id), spec);
+  const outcome = await executeRun(journal, run.id, {
+    provider: scripted({ one: edit('a.txt', 'alpha', 'A'), two: edit('b.txt', 'beta', 'B') }),
+  });
+  assert.deepEqual(outcome.tasks.map(task => task.status), ['completed', 'completed']);
+  assert.equal(outcome.convergence?.passed, true);
+  assert.deepEqual(outcome.convergence?.applied, ['one', 'two']);
+  assert.equal(await readFile(join(outcome.convergence?.worktree as string, 'b.txt'), 'utf8'), 'B');
+  assert.equal(await readFile(join(root, 'b.txt'), 'utf8'), 'beta');
+
+  const stray = await journal.create({ root, goal: 'Strays', workers: 1, tasks: [{ id: 'stray', task: 'Change alpha', check: pass, files: ['b.txt'] }] });
+  const result = await executeRun(journal, stray.id, { provider: scripted({ stray: edit('a.txt', 'alpha', 'A') }) });
+  assert.equal(result.tasks[0].status, 'unverified');
 });
 
 test('a run survives a crash: finished work is kept and the interrupted task restarts from the base revision', async context => {
@@ -96,7 +127,7 @@ test('the interactive TUI plans from a goal, lets the person edit the plan, runs
   let text = '';
   output.on('data', chunk => { text += chunk.toString(); });
   const model = async (messages: { role: string; content: string }[]) => {
-    if (messages[0].content.startsWith('You split')) {
+    if (messages[0].content.startsWith('You turn')) {
       return JSON.stringify({ tasks: [{ id: 'alpha', task: 'Change alpha' }, { id: 'beta', task: 'Change beta' }, { id: 'extra', task: 'Not wanted' }] });
     }
     const system = messages[0].content;
@@ -124,7 +155,8 @@ test('the interactive TUI plans from a goal, lets the person edit the plan, runs
   await answer('uit > ', 'q');
   assert.equal(await done, 0);
   assert.match(text, /1\. alpha — Change alpha/u);
-  assert.doesNotMatch(text.split('drop 3\n')[1] ?? '', /extra/u);
+  assert.doesNotMatch(text.split('drop 3\n')[1]?.split('go\n')[0] ?? '', /\d\. extra/u);
+  assert.doesNotMatch(text.split('plan> [go | edit N | drop N | add | replan | cancel] go')[1] ?? '', /extra — /u);
   assert.match(text, /alpha completed/u);
   assert.match(text, /\+A/u);
   assert.match(text, /finished\s+Edit the text files/u);

@@ -9,7 +9,8 @@ import type { AgentProvider, CodingResult } from './coding-agent.ts';
 import { isObject } from './workspace.ts';
 
 const git = promisify(execFile);
-export type CodingTask = { id: string; task: string; check?: string };
+/** `files` are the paths (or folders) this task owns. Anything it changes outside them is reported and blocks a verified verdict. */
+export type CodingTask = { id: string; task: string; check?: string; files?: string[] };
 export type TaskResult = {
   task: CodingTask;
   worktree: string;
@@ -17,6 +18,8 @@ export type TaskResult = {
   result?: CodingResult;
   error?: string;
   changedFiles: string[];
+  /** Changed files outside the task's declared ownership. */
+  outOfScope?: string[];
   diff: string;
 };
 export type ParallelRun = { id: string; base: string; directory: string; tasks: TaskResult[] };
@@ -36,22 +39,27 @@ export function validateTasks(value: unknown): CodingTask[] {
   return value.map((item: unknown): CodingTask => {
     if (!isObject(item) || typeof item.id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u.test(item.id) ||
         typeof item.task !== 'string' || !item.task.trim() ||
-        (item.check !== undefined && (typeof item.check !== 'string' || !item.check.trim()))) {
+        (item.check !== undefined && (typeof item.check !== 'string' || !item.check.trim())) ||
+        (item.files !== undefined && (!Array.isArray(item.files) || item.files.length > 200 || item.files.some((file: unknown) => typeof file !== 'string' || !file || file.startsWith('/') || file.includes('..'))))) {
       throw new Error('Each task requires an id, a description, and an optional check command');
     }
-    if (Object.keys(item).some(key => !['id', 'task', 'check'].includes(key))) throw new Error(`Unknown field in task ${item.id}`);
+    if (Object.keys(item).some(key => !['id', 'task', 'check', 'files'].includes(key))) throw new Error(`Unknown field in task ${item.id}`);
     if (ids.has(item.id)) throw new Error(`Duplicate task id: ${item.id}`);
     ids.add(item.id);
-    return { id: item.id, task: item.task, ...(item.check ? { check: item.check as string } : {}) };
+    return { id: item.id, task: item.task, ...(item.check ? { check: item.check as string } : {}), ...(Array.isArray(item.files) && item.files.length ? { files: (item.files as string[]).map(file => file.replace(/^\.\//u, '')) } : {}) };
   });
 }
 
 /** Run one coding task inside an existing worktree and collect its diff, changed files and verdict. */
-export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider): Promise<TaskResult> {
+export function owns(owned: string[], file: string): boolean {
+  return owned.some(path => file === path || file.startsWith(path.endsWith('/') ? path : `${path}/`));
+}
+
+export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider, context?: unknown): Promise<TaskResult> {
   let result: CodingResult | undefined;
   let error: string | undefined;
   try {
-    result = await runCodingAgent({ root: worktree, task: task.task, provider, check: task.check });
+    result = await runCodingAgent({ root: worktree, task: task.task, provider, check: task.check, context });
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause);
   }
@@ -60,9 +68,10 @@ export async function executeTask(task: CodingTask, worktree: string, provider: 
   const untracked = await gitOutput(worktree, ['ls-files', '--others', '--exclude-standard', '-z']);
   const changedFiles = [...new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean))];
   const lastCheck = result?.checks.at(-1);
+  const outOfScope = task.files?.length ? changedFiles.filter(file => !owns(task.files as string[], file)) : [];
   const status = error || !result?.completed ? 'failed' :
-    !task.check || !lastCheck || lastCheck.stale ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
-  return { task, worktree, status, result, error, changedFiles, diff };
+    !task.check || !lastCheck || lastCheck.stale || outOfScope.length ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
+  return { task, worktree, status, result, error, changedFiles, ...(outOfScope.length ? { outOfScope } : {}), diff };
 }
 
 export async function runParallel(options: {

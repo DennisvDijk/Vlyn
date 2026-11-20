@@ -79,6 +79,8 @@ export async function runCodingAgent(options: {
   task: string;
   provider: AgentProvider;
   check?: string;
+  /** Binding constraints from the run's spec: goal, non-goals, assumptions, acceptance criteria, owned files. */
+  context?: unknown;
   maxTurns?: number;
   onAction?: (description: string) => void;
 }): Promise<CodingResult> {
@@ -87,6 +89,7 @@ export async function runCodingAgent(options: {
     { role: 'system', content: instructions },
     { role: 'user', content: JSON.stringify({ task: options.task, verification: options.check ?? 'none provided' }) },
   ];
+  if (options.context !== undefined) messages.push({ role: 'user', content: JSON.stringify({ spec: options.context, rules: 'Stay within the files you own. List any assumption you could not confirm in your final summary.' }) });
   try {
     const instructionFile = await pathInProject(root, 'AGENTS.md', false);
     const projectInstructions = await fileContent(instructionFile);
@@ -128,7 +131,7 @@ export async function runCodingAgent(options: {
       }
     }
   };
-  if (messages.length > 2) record('read', 'AGENTS.md');
+  if (messages.length > (options.context !== undefined ? 3 : 2)) record('read', 'AGENTS.md');
   let summary = 'Turn limit reached before the agent finished.';
   let completed = false;
   for (let turn = 0; turn < (options.maxTurns ?? 30); turn += 1) {

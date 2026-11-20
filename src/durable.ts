@@ -1,17 +1,27 @@
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { mkdir, realpath, rm } from 'node:fs/promises';
+import { cp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { AgentProvider } from './coding-agent.ts';
 import { executeTask, gitOutput } from './parallel.ts';
 import type { CodingTask, TaskResult } from './parallel.ts';
+import { briefFor } from './planner.ts';
+import type { Spec } from './planner.ts';
 
 export type RunStatus = 'planned' | 'running' | 'interrupted' | 'finished';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'unverified' | 'failed';
 export type RunRow = { id: string; root: string; goal: string; base: string; workers: number; status: RunStatus; createdAt: string; directory: string };
 export type TaskRow = { runId: string; task: CodingTask; status: TaskStatus; attempts: number; worktree: string; result?: TaskResult };
+export type Convergence = {
+  applied: string[];
+  conflicts: { task: string; detail: string }[];
+  checks: { command: string; exitCode: number | null; output: string }[];
+  passed: boolean;
+  worktree: string;
+};
 export type RunEvent = { runId: string; at: string; message: string };
 
 export function defaultHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -40,12 +50,25 @@ export class Journal {
         run_id TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, task TEXT NOT NULL, check_command TEXT,
         status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, worktree TEXT NOT NULL, result TEXT,
         PRIMARY KEY (run_id, id));
+      CREATE TABLE IF NOT EXISTS specs (run_id TEXT PRIMARY KEY, spec TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS convergence (run_id TEXT PRIMARY KEY, result TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, message TEXT NOT NULL);
     `);
+    if (!this.db.prepare('PRAGMA table_info(tasks)').all().some(column => column.name === 'files')) this.db.exec('ALTER TABLE tasks ADD COLUMN files TEXT');
   }
 
   close(): void { this.db.close(); }
+
+  spec(runId: string): Spec | undefined {
+    const row = this.db.prepare('SELECT spec FROM specs WHERE run_id = ?').get(runId);
+    return row ? JSON.parse(String(row.spec)) as Spec : undefined;
+  }
+
+  convergence(runId: string): Convergence | undefined {
+    const row = this.db.prepare('SELECT result FROM convergence WHERE run_id = ?').get(runId);
+    return row ? JSON.parse(String(row.result)) as Convergence : undefined;
+  }
 
   event(runId: string, message: string): RunEvent {
     const at = new Date().toISOString();
@@ -77,7 +100,7 @@ export class Journal {
   tasks(runId: string): TaskRow[] {
     return this.db.prepare('SELECT * FROM tasks WHERE run_id = ? ORDER BY position').all(runId).map(row => ({
       runId, status: row.status as TaskStatus, attempts: Number(row.attempts), worktree: String(row.worktree),
-      task: { id: String(row.id), task: String(row.task), ...(row.check_command ? { check: String(row.check_command) } : {}) },
+      task: { id: String(row.id), task: String(row.task), ...(row.check_command ? { check: String(row.check_command) } : {}), ...(row.files ? { files: JSON.parse(String(row.files)) as string[] } : {}) },
       result: row.result ? JSON.parse(String(row.result)) as TaskResult : undefined,
     }));
   }
@@ -97,7 +120,7 @@ export class Journal {
   }
 
   /** Create a run: one persistent worktree per task, all at the same committed revision. */
-  async create(options: { root: string; goal: string; tasks: CodingTask[]; workers: number }): Promise<RunRow> {
+  async create(options: { root: string; goal: string; tasks: CodingTask[]; workers: number; spec?: Spec }): Promise<RunRow> {
     const root = await realpath(options.root);
     const top = await realpath((await gitOutput(root, ['rev-parse', '--show-toplevel'])).trim());
     if (root !== top) throw new Error('Runs require the Git repository root');
@@ -118,13 +141,14 @@ export class Journal {
       for (const task of options.tasks) {
         const worktree = join(directory, task.id);
         await gitOutput(root, ['worktree', 'add', '--detach', '--', worktree, base]);
-        this.db.prepare('INSERT INTO tasks (run_id, id, position, task, check_command, status, worktree) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(id, task.id, position++, task.task, task.check ?? null, 'pending', worktree);
+        this.db.prepare('INSERT INTO tasks (run_id, id, position, task, check_command, status, worktree, files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(id, task.id, position++, task.task, task.check ?? null, 'pending', worktree, task.files ? JSON.stringify(task.files) : null);
       }
     } catch (cause) {
       await this.discard(id);
       throw new Error(`Could not create task worktrees: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
+    if (options.spec) this.db.prepare('INSERT INTO specs (run_id, spec) VALUES (?, ?)').run(id, JSON.stringify(options.spec));
     this.event(id, `Planned ${options.tasks.length} tasks at ${base.slice(0, 8)}`);
     return this.run(id) as RunRow;
   }
@@ -136,10 +160,13 @@ export class Journal {
     for (const task of this.tasks(run.id)) {
       try { await gitOutput(run.root, ['worktree', 'remove', '--force', task.worktree]); } catch { /* already gone */ }
     }
+    try { await gitOutput(run.root, ['worktree', 'remove', '--force', join(run.directory, '_integration')]); } catch { /* none */ }
     try { await gitOutput(run.root, ['worktree', 'prune']); } catch { /* repository moved */ }
     await rm(run.directory, { recursive: true, force: true });
     this.db.prepare('DELETE FROM events WHERE run_id = ?').run(run.id);
     this.db.prepare('DELETE FROM tasks WHERE run_id = ?').run(run.id);
+    this.db.prepare('DELETE FROM specs WHERE run_id = ?').run(run.id);
+    this.db.prepare('DELETE FROM convergence WHERE run_id = ?').run(run.id);
     this.db.prepare('DELETE FROM runs WHERE id = ?').run(run.id);
   }
 }
@@ -156,7 +183,7 @@ export async function executeRun(journal: Journal, runId: string, options: {
   provider: (task: CodingTask) => AgentProvider;
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
-}): Promise<{ run: RunRow; tasks: TaskRow[] }> {
+}): Promise<{ run: RunRow; tasks: TaskRow[]; convergence?: Convergence }> {
   const run = journal.run(runId);
   if (!run) throw new Error(`No run ${runId}`);
   const owner = journal.owner(run.id);
@@ -170,6 +197,8 @@ export async function executeRun(journal: Journal, runId: string, options: {
     journal.setTask(run.id, row.task.id, 'pending');
     say(`Recovered ${row.task.id} after an interruption; restarting it from the base revision`);
   }
+  const spec = journal.spec(run.id);
+  const allTasks = journal.tasks(run.id).map(row => row.task);
   const queue = journal.tasks(run.id).filter(row => row.status === 'pending');
   if (queue.length < journal.tasks(run.id).length) say(`Resuming: ${queue.length} tasks left`);
   let next = 0;
@@ -180,7 +209,7 @@ export async function executeRun(journal: Journal, runId: string, options: {
       if (!row) return;
       journal.setTask(run.id, row.task.id, 'running');
       say(`Started ${row.task.id}`);
-      const result = await executeTask(row.task, row.worktree, options.provider(row.task));
+      const result = await executeTask(row.task, row.worktree, options.provider(row.task), spec ? briefFor(spec, row.task, allTasks) : undefined);
       if (options.signal?.aborted && result.error) {
         // Interrupted mid-task: leave it `running` so resume restarts it cleanly.
         say(`Stopped ${row.task.id} before it finished`);
@@ -195,5 +224,67 @@ export async function executeRun(journal: Journal, runId: string, options: {
   const done = tasks.every(task => !['pending', 'running'].includes(task.status));
   journal.setRun(run.id, done ? 'finished' : 'interrupted');
   say(done ? 'Run finished' : 'Run interrupted; resume it to continue');
-  return { run: journal.run(run.id) as RunRow, tasks };
+  let convergence = journal.convergence(run.id);
+  if (done && !convergence && tasks.filter(task => task.status === 'completed').length > 1) {
+    convergence = await converge(journal, run.id);
+    say(convergence.passed ? 'Integration: all results combine cleanly and checks pass' : `Integration: ${convergence.conflicts.length} conflicts, ${convergence.checks.filter(check => check.exitCode !== 0).length} failing checks`);
+  }
+  return { run: journal.run(run.id) as RunRow, tasks, convergence };
+}
+
+function shell(cwd: string, command: string): Promise<{ exitCode: number | null; output: string }> {
+  return new Promise(done => {
+    const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
+    let output = '';
+    const append = (data: Buffer) => { output = (output + data.toString()).slice(-4000); };
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+    child.once('error', error => done({ exitCode: null, output: error.message }));
+    child.once('close', exitCode => done({ exitCode, output }));
+  });
+}
+
+/**
+ * Convergence: apply every completed task's result onto a fresh copy of the base revision, report conflicts, and re-run
+ * the tasks' checks on the combined result. Parallel agents each passed alone; this shows whether the whole holds together.
+ * The combined worktree is left in place for review. The original checkout is never changed.
+ */
+export async function converge(journal: Journal, runId: string): Promise<Convergence> {
+  const run = journal.run(runId);
+  if (!run) throw new Error(`No run ${runId}`);
+  const worktree = join(run.directory, '_integration');
+  try { await gitOutput(run.root, ['worktree', 'remove', '--force', worktree]); } catch { /* first time */ }
+  await gitOutput(run.root, ['worktree', 'add', '--detach', '--', worktree, run.base]);
+  const result: Convergence = { applied: [], conflicts: [], checks: [], passed: false, worktree };
+  const done = journal.tasks(run.id).filter(row => row.status === 'completed' && row.result);
+  for (const row of done) {
+    const task = row.result as TaskResult;
+    try {
+      if (task.diff.trim()) {
+        const patch = join(run.directory, `${row.task.id}.patch`);
+        await writeFile(patch, task.diff);
+        await gitOutput(worktree, ['apply', '--binary', '--whitespace=nowarn', patch]);
+      }
+      const untracked = (await gitOutput(row.worktree, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
+      for (const file of untracked) {
+        const target = join(worktree, file);
+        const existing = await readFile(target).catch(() => undefined);
+        const incoming = await readFile(join(row.worktree, file));
+        if (existing && !existing.equals(incoming)) throw new Error(`${file} was also created by another task`);
+        await mkdir(join(target, '..'), { recursive: true });
+        await cp(join(row.worktree, file), target);
+      }
+      result.applied.push(row.task.id);
+    } catch (cause) {
+      result.conflicts.push({ task: row.task.id, detail: (cause instanceof Error ? cause.message : String(cause)).split('\n')[0].slice(0, 300) });
+    }
+  }
+  const commands = [...new Set(done.map(row => row.task.check).filter((command): command is string => Boolean(command)))];
+  for (const command of commands) {
+    const outcome = await shell(worktree, command);
+    result.checks.push({ command, ...outcome });
+  }
+  result.passed = result.conflicts.length === 0 && result.applied.length > 0 && result.checks.every(check => check.exitCode === 0);
+  journal.db.prepare('INSERT OR REPLACE INTO convergence (run_id, result) VALUES (?, ?)').run(run.id, JSON.stringify(result));
+  return result;
 }

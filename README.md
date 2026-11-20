@@ -20,7 +20,8 @@ plan> [go | edit N | drop N | add | replan | cancel] go
 
 | | |
 | --- | --- |
-| **Goals, not task lists** | `vlyn auto --goal "…"` asks the model to split the goal into independent tasks, using your file list and import graph, and warns when two tasks would touch the same file. |
+| **Goals, not task lists** | `vlyn auto --goal "…"` asks the model for a spec (non-goals, assumptions, acceptance criteria, risks) and independent tasks, each owning specific files. Tasks that overlap or depend on each other are merged, so what remains can run in parallel. |
+| **Contracts, not hopes** | Each agent gets the spec and its file ownership. Edits outside owned files make a task `unverified`. When several tasks finish, Vlyn applies all results onto a fresh copy of the base and re-runs the checks there. |
 | **Durable execution** | Runs live in a SQLite journal (`~/.vlyn`). Close the terminal, lose power, or press Ctrl+C: `vlyn resume` keeps finished tasks and restarts only the interrupted one from a clean base. |
 | **Interactive TUI** | `vlyn` opens a session: describe a goal, edit the plan, watch a live board, review diffs per task. No dependencies; works over SSH. |
 | **Task graphs** | Every agent sees a small graph of what it read, edited and checked, plus the static import graph around it. Agents can ask which files and tests a change affects. |
@@ -74,6 +75,15 @@ Every state change is committed before work continues: the plan, each task's sta
 - **Where**: `~/.vlyn`, or `VLYN_HOME` / `--home`. The journal is outside your repository, so it never dirties your tree.
 - **Cleanup**: `discard` in the review prompt removes a run's worktrees and journal entries.
 
+## Specs, ownership and convergence
+
+The planner writes a short spec before any code is touched, and each task declares the files it owns. Vlyn enforces that contract rather than trusting it:
+
+- Tasks whose owned files overlap, or that depend on one another, are merged into one task.
+- Every agent receives the spec, its own files and the files others own, and is told to report assumptions it could not confirm.
+- A task that changes files it does not own is `unverified`, even if its check passed.
+- **Convergence**: after a run, Vlyn applies every completed task's diff in a separate `_integration` worktree, reports conflicts, and runs the distinct check commands on the combined result. Your checkout is never changed. The result is stored in the journal.
+
 ## Interactive session
 
 | Prompt | Commands |
@@ -122,8 +132,8 @@ vlyn status examples/payments --json
 | --- | --- |
 | `src/coding-agent.ts` | Model loop with scoped tools and a per-task graph |
 | `src/providers.ts` | Any OpenAI-compatible or Anthropic endpoint, live model catalog and refresh |
-| `src/planner.ts` | Goal → validated, independent tasks |
-| `src/durable.ts` | SQLite journal, run creation, recovery, resumable executor |
+| `src/planner.ts` | Goal → spec and validated, independent tasks with file ownership |
+| `src/durable.ts` | SQLite journal, run creation, recovery, resumable executor, convergence |
 | `src/parallel.ts` | One task in one worktree; the batch runner |
 | `src/graph.ts`, `src/tools.ts` | Import graph, impact, cycles, doctor |
 | `src/tui.ts` | Dependency-free interactive session |
@@ -133,8 +143,8 @@ vlyn status examples/payments --json
 
 - Model access is OpenAI-compatible Chat Completions plus native Anthropic. Native Gemini and Bedrock need a gateway such as LiteLLM in front.
 - Tool use is Vlyn's own JSON action protocol, not each vendor's native tool calling.
-- Tasks are independent by design; Vlyn does not merge worktrees for you. Review with `diff N` or Git and apply what you want.
-- The planner can only warn about overlapping files; it cannot guarantee independence.
+- Tasks are independent by design. Vlyn builds a combined `_integration` worktree and checks it, but does not change your checkout; review with `diff N` or Git and apply what you want.
+- File ownership is declared by the model and checked after the fact; it cannot guarantee semantic independence.
 - Dependency discovery covers JavaScript and TypeScript relative imports.
 - Cross-repository reasoning is planned, not built.
 
