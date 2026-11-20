@@ -115,6 +115,7 @@ async function main(): Promise<number> {
   });
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
   const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
+  const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true }) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
   if (positionals[0] === 'eval') {
     const report = await runEval();
@@ -193,6 +194,7 @@ async function main(): Promise<number> {
         input: process.stdin, output: process.stdout, journal, root, workers: Number(values.workers ?? '3'),
         refreshSeconds: Number(process.env.VLYN_MODEL_REFRESH_SECONDS ?? '600'),
         ...(provider ? { provider } : {}),
+        ...(coding ? { codingProvider: coding } : {}),
         ...(catalog ? { catalog } : {}),
         ...(defaultCheck ? { defaultCheck } : {}),
       });
@@ -234,7 +236,7 @@ async function main(): Promise<number> {
         runId = (await journal.create({ root, goal: values.goal, tasks: plan.tasks, workers })).id;
         if (!values.json) console.error(`Run ${runId.slice(0, 8)} planned with ${plan.tasks.length} tasks. Resume with: vlyn resume ${runId.slice(0, 8)}`);
       }
-      const runner = needModel('Running tasks');
+      const runner = coding ?? needModel('Running tasks');
       const controller = new AbortController();
       process.once('SIGINT', () => { controller.abort(); console.error('Finishing running tasks, then stopping. Resume later with: vlyn resume ' + runId.slice(0, 8)); });
       const { run, tasks } = await executeRun(journal, runId, {
@@ -261,7 +263,7 @@ async function main(): Promise<number> {
   }
   if (command === 'batch') {
     if (positionals.length > 2 || !values.tasks) throw new Error('batch requires --tasks');
-    const batchModel = needModel('batch');
+    const batchModel = coding ?? needModel('batch');
     if (values.db || values.task || values.check) throw new Error('Use a task file to specify tasks and checks');
     const workers = Number(values.workers ?? '3');
     const tasks = await readTasks(resolve(values.tasks));
@@ -278,7 +280,7 @@ async function main(): Promise<number> {
   }
   if (command === 'code') {
     if (positionals.length > 2 || !values.task?.trim()) throw new Error('code requires --task');
-    const codeModel = needModel('code');
+    const codeModel = coding ?? needModel('code');
     if (values.db || values.workers || values.tasks) throw new Error('--db, --workers and --tasks do not apply to code');
     const result = await runCodingAgent({
       root: directory,

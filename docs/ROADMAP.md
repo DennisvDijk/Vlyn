@@ -17,7 +17,7 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 9 | Run against a live model; fix what scripted tests hid | next | Still the largest unknown. Phase 14 is scripted on purpose and does not close this |
 | 10 | `vlyn converge` command and applying a combined result to a branch | done (PR #8) | Folded into phase 17. `vlyn converge` and `vlyn apply` exist. Apply does not check out the branch |
 | 11 | Cross-repository and deployed-service reasoning (repos, Terraform, YAML, Kubernetes as nodes and edges) | later | Vlyn's main differentiator; not built |
-| 12 | Native tool calling per vendor; Gemini and Bedrock without a gateway | later | |
+| 12 | Native tool calling for OpenAI-compatible and Anthropic; JSON action remains the fallback | in PR | Gemini and Bedrock still need a gateway. Coding turns send tools. Planning turns stay JSON |
 | 13 | GitLab CI alongside GitHub Actions | later | Requested for the wider project 2026-11-17 |
 | 14 | Decision journal and `vlyn eval`: confidence recorded before the verdict, Brier score, honesty rate | done (PR #7) | `src/decision.ts`, `src/eval.ts`. Scripted suite only. Does not close phase 9 |
 | 15 | Lesson store: consolidation, decay, reconsolidation, claim status, reviewed `AGENTS.md` suggestion | done (PR #6) | `src/lessons.ts`. Folds phase 8. `vlyn lessons` prints a suggestion. `--apply` writes only the marked section of AGENTS.md |

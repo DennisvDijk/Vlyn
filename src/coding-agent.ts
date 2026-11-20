@@ -18,7 +18,7 @@ type TaskGraph = {
 export type CodingResult = { summary: string; files: string[]; checks: CheckResult[]; completed: boolean; graph: TaskGraph; denied: string[] };
 
 const instructions = `You are a coding agent. Work only inside the supplied project.
-Return one JSON action on every turn: {"action":"list","path":"."}, {"action":"read","path":"file"},
+If function tools are available, call one tool per turn. Otherwise return one JSON action: {"action":"list","path":"."}, {"action":"read","path":"file"},
 {"action":"replace","path":"file","old":"exact text","new":"replacement"},
 {"action":"create","path":"new file","content":"text"}, {"action":"check"},
 {"action":"graph"}, {"action":"impact","path":"file"} (files that import it, transitively, plus tests to run),

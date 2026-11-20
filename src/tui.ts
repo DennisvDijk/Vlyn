@@ -23,6 +23,8 @@ export type TuiOptions = {
   root: string;
   /** Model access. Absent when no API key is configured. */
   provider?: AgentProvider;
+  /** Coding turns. Uses native tools when the CLI built this provider. Planning stays on `provider`. */
+  codingProvider?: AgentProvider;
   workers?: number;
   defaultCheck?: string;
   /** Live model list; refreshed in the background while the session is open. */
@@ -59,7 +61,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
 
   async function execute(run: RunRow): Promise<void> {
     if (!options.provider) { print('A model is needed to run tasks. Set VLYN_API_KEY (and VLYN_BASE_URL for a gateway).'); return; }
-    const provider = options.provider;
+    const provider = options.codingProvider ?? options.provider;
     const controller = new AbortController();
     const stop = () => { controller.abort(); print('', 'Stopping after the running tasks finish. Resume any time with: resume ' + run.id.slice(0, 8)); };
     process.once('SIGINT', stop);
