@@ -31,36 +31,120 @@ Repository files the agent reads are sent to the model provider you configured.
 
 Guides: [docs/README.md](docs/README.md).
 
-## How it works
+## How a goal run works
+
+`vlyn auto` and the TUI `n` command follow this path. `vlyn auto` does not spawn actor rows. The actor pool is the next diagram.
+
+```mermaid
+flowchart TD
+  goal["vlyn auto --goal or TUI n"]
+  mem["lessons.ts planningMemory"]
+  planner["planner.ts planTasks"]
+  gate{"premortem.ts planGate"}
+  stopped["exit 1, no worktree"]
+  created["durable.ts Journal.create"]
+  run["durable.ts executeRun"]
+  task["parallel.ts executeTask"]
+  agent["coding-agent.ts"]
+  manifest["capabilities.ts manifestFor"]
+  sand["sandbox.ts planLaunch"]
+  parent["providers.ts in the parent"]
+  audit["broker.ts SecurityLog"]
+  judge["parallel.ts judgeTask"]
+  integ["durable.ts converge"]
+  apply["vlyn apply --branch"]
+  aar["premortem.ts afterAction"]
+  back["lessons.ts consolidate"]
+
+  goal --> mem --> planner --> gate
+  gate -->|"risk at 0.7 or higher"| stopped
+  gate -->|"below 0.7, --proceed, or TUI force"| created --> run --> task --> agent
+  agent --> manifest --> sand
+  agent --> parent
+  agent --> audit
+  task --> judge
+  judge -->|"more than one task completed"| integ
+  integ -->|"integration passed"| apply
+  run --> aar --> back
+  back --> mem
+```
+
+`planningMemory` puts lesson claims ahead of journal recall, capped at five items and about 2 KB. `planTasks` returns a spec and up to eight tasks, and merges tasks whose owned files overlap. `--plan-only` stops before `preMortem`. A risk at confidence 0.7 or higher returns exit 1 and creates no worktree. `--proceed` and TUI `force` pass the gate.
+
+Each task gets a detached worktree at the same commit. `executeTask` builds a capability manifest when the task has a check or owned files. `coding-agent.ts` may list, read, replace, and create files, and may run only that check. Model calls stay in `providers.ts` in the parent. `SecurityLog` appends allow and deny rows to `security_audit`, each hashed to the previous row. `planLaunch` starts the check with bubblewrap, `unshare`, `sandbox-exec`, or Node `--permission`, whichever this machine actually has. `judgeTask` returns `completed` only when the agent finished, the last check passed after the last edit, and every changed path is inside the owned files. A denied write is `unverified`.
+
+When more than one task is `completed`, `converge` copies those diffs onto `_integration` and runs the checks there. `vlyn apply --branch NAME` commits that tree and creates the branch. It does not move `HEAD`. When the run is finished, `afterAction` stores a short note. The next `vlyn auto` consolidates lessons from those rows before it plans.
+
+The journal is one SQLite file under `~/.vlyn` (`VLYN_HOME` or `--home`).
 
 ```mermaid
 flowchart LR
-  goal[Goal] --> plan[Spec and owned tasks]
-  plan --> trees[One worktree per task]
-  trees --> agents[Agents in parallel]
-  agents --> journal[(SQLite journal)]
-  agents --> integrate[_integration worktree]
-  integrate --> verdict[Check on the combined diff]
+  db["~/.vlyn SQLite"]
+  db --> durable["durable.ts: runs, tasks, specs, events, convergence"]
+  db --> lessons["lessons.ts: lessons, lesson_state"]
+  db --> actors["actors.ts: actors, brain_snapshots, actor_messages"]
+  db --> chain["broker.ts: security_audit hash chain"]
+  db --> forecasts["decision.ts: forecasts, written by vlyn eval"]
 ```
 
-1. The planner returns a short spec and up to eight tasks. Each task names the files it owns. Overlapping or dependent tasks are merged, so what remains can run at once.
-2. Each task gets a detached worktree at the same commit. The agent may list, read, replace, and create files, and may run only the check you supplied.
-3. Every state change is written to `~/.vlyn` before work continues. `vlyn resume` keeps finished tasks and resets an interrupted one to the base commit.
-4. A task is `completed` only when the last check passed after the last edit, inside the owned files. Otherwise it is `unverified` or `failed`.
-5. When more than one task completes, Vlyn copies those diffs onto a fresh `_integration` worktree and runs the checks there. Conflicts are reported. Your branch does not move.
+`brain_snapshots` are versioned JSON. The hash chain is `security_audit`, not the snapshots.
 
-## What you can do now
+## Actor runtime
 
-| You want to | Command | Guide |
+`ActorRuntime` in `src/actors.ts` keeps idle actors as rows. A snapshot holds working context, the task graph, episodes, decisions, claims, hypotheses, and a workspace commit and diff. `vlyn actors` lists id, role, state, and version. Roles are `planner`, `coder`, `reviewer`, `verifier`, and `supervisor`. A goal run does not call this. Guide: [docs/how-to/actor-snapshots.md](docs/how-to/actor-snapshots.md).
+
+```mermaid
+stateDiagram-v2
+  [*] --> idle: spawn
+  idle --> running: claim
+  running --> idle: release
+  running --> idle: revert
+  idle --> running: resume
+  running --> crashed: supervise, first throw
+  crashed --> running: retry from the last snapshot
+  crashed --> [*]: second throw stays crashed
+```
+
+`checkpoint` writes the next `brain_snapshots` version and drops the in-memory brain. Sleep on that checkpoint runs `consolidateBrain`. `resume` with an outcome runs `reconsolidate` and writes another version. `revert` points `current_version` at an older snapshot and leaves later versions in the table. `fork` inserts a new idle actor. It does not change the parent.
+
+`raceHypotheses` in `src/actor-coding.ts` is the concrete fork path. It is not a CLI command. It spawns a planner, forks one coder per hypothesis, runs `executeTask` in that coder's worktree, and lets a verifier accept only status `completed`. The other ids stay as dissent. Siblings do not see each other's diffs.
+
+```mermaid
+flowchart LR
+  planner["spawn planner"]
+  left["fork coder"]
+  right["fork coder"]
+  verifier["spawn verifier"]
+  accepted["accepted hypothesis"]
+  dissent["dissent kept"]
+  planner --> left --> verifier
+  planner --> right --> verifier
+  verifier -->|"status completed"| accepted
+  verifier -->|"any other status"| dissent
+```
+
+`supervise` is the one-for-one supervisor: one retry from the last snapshot, then `crashed`.
+
+## What you can try
+
+| Coding benefit | Command | Guide |
 | --- | --- | --- |
-| Install and see a plan | `vlyn doctor`, then `vlyn auto --plan-only` | [Install and first run](docs/how-to/install-and-first-run.md) |
-| Point at a model | `VLYN_API_KEY`, `VLYN_BASE_URL`, `vlyn models` | [Connect a model](docs/how-to/connect-a-model.md) |
-| Run a goal | `vlyn` or `vlyn auto --goal … --check …` | [Run a goal](docs/how-to/run-a-goal.md) |
-| Continue after a crash | `vlyn resume` | [Resume a run](docs/how-to/resume-a-run.md) |
-| Read the diff | review prompt: `diff N` | [Review results](docs/how-to/review-results.md) |
-| See what a change touches | `vlyn graph`, `vlyn impact` | [Graph and impact in CI](docs/how-to/graph-and-impact-in-ci.md) |
-| Check a JSON change against contracts | `vlyn run examples/payments` | [Contract rehearsal](docs/how-to/contract-rehearsal.md) |
-| See why the environment is unhappy | `vlyn doctor` | [Troubleshoot](docs/how-to/troubleshoot-with-doctor.md) |
+| See the plan before any edit | `vlyn auto --goal "…" --check "npm test" --plan-only` | [Run a goal](docs/how-to/run-a-goal.md) |
+| Stop a plan that already looks failed | `vlyn auto --goal "…" --check "npm test"` | [Pre-mortem and apply](docs/how-to/premortem-and-apply.md) |
+| Continue after Ctrl+C without redoing finished tasks | `vlyn resume` | [Resume a run](docs/how-to/resume-a-run.md) |
+| Read a task diff. Your checkout stays put | review prompt `diff N` | [Review results](docs/how-to/review-results.md) |
+| Put the combined result on a new branch without moving HEAD | `vlyn converge`, then `vlyn apply --branch NAME` | [Pre-mortem and apply](docs/how-to/premortem-and-apply.md) |
+| Show the next plan a failure it has already seen | `vlyn lessons` | [Lessons](docs/how-to/lessons.md) |
+| Write that suggestion into the marked section of AGENTS.md | `vlyn lessons --apply` | [Lessons](docs/how-to/lessons.md) |
+| List idle actors and their snapshot version | `vlyn actors` | [Actor snapshots](docs/how-to/actor-snapshots.md) |
+| Score verdict honesty and calibration without a model | `vlyn eval` | [Eval](docs/how-to/eval.md) |
+| See which confinement this OS actually has | `vlyn doctor` | [Sandbox and audit](docs/how-to/sandbox-and-audit.md) |
+| Refuse a check this OS cannot confine | `vlyn auto --require-sandbox` | [Sandbox and audit](docs/how-to/sandbox-and-audit.md) |
+| Read the hash-chained allow and deny log | `vlyn audit` | [Sandbox and audit](docs/how-to/sandbox-and-audit.md) |
+| Point at an OpenAI-compatible gateway, Anthropic, or Ollama | `vlyn models` | [Connect a model](docs/how-to/connect-a-model.md) |
+| Fail CI on a JavaScript or TypeScript import cycle | `vlyn graph .` | [Graph and impact](docs/how-to/graph-and-impact-in-ci.md) |
+| Catch a JSON break against a recorded consumer | `vlyn run examples/payments` | [Contract rehearsal](docs/how-to/contract-rehearsal.md) |
+| Test Node 24 and 26 on Linux, macOS, and Windows, and audit the lockfile | GitHub Actions job `CI result` | [Contributing](docs/how-to/contributing.md) |
 
 ## Research stance
 
