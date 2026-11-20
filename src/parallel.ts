@@ -9,7 +9,8 @@ import type { AgentProvider, CodingResult } from './coding-agent.ts';
 import { isObject } from './workspace.ts';
 
 const git = promisify(execFile);
-export type CodingTask = { id: string; task: string; check?: string };
+/** `files` are the paths (or folders) this task owns. Anything it changes outside them is reported and blocks a verified verdict. */
+export type CodingTask = { id: string; task: string; check?: string; files?: string[] };
 export type TaskResult = {
   task: CodingTask;
   worktree: string;
@@ -17,30 +18,60 @@ export type TaskResult = {
   result?: CodingResult;
   error?: string;
   changedFiles: string[];
+  /** Changed files outside the task's declared ownership. */
+  outOfScope?: string[];
   diff: string;
 };
 export type ParallelRun = { id: string; base: string; directory: string; tasks: TaskResult[] };
 
-async function gitOutput(root: string, args: string[]): Promise<string> {
+export async function gitOutput(root: string, args: string[]): Promise<string> {
   const { stdout } = await git('git', args, { cwd: root, maxBuffer: 4_000_000, timeout: 30_000 });
   return stdout;
 }
 
 export async function readTasks(path: string): Promise<CodingTask[]> {
-  const value: unknown = JSON.parse(await readFile(path, 'utf8'));
+  return validateTasks(JSON.parse(await readFile(path, 'utf8')));
+}
+
+export function validateTasks(value: unknown): CodingTask[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) throw new Error('Task file must contain an array of 1 to 32 tasks');
   const ids = new Set<string>();
   return value.map((item: unknown): CodingTask => {
     if (!isObject(item) || typeof item.id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u.test(item.id) ||
         typeof item.task !== 'string' || !item.task.trim() ||
-        (item.check !== undefined && (typeof item.check !== 'string' || !item.check.trim()))) {
+        (item.check !== undefined && (typeof item.check !== 'string' || !item.check.trim())) ||
+        (item.files !== undefined && (!Array.isArray(item.files) || item.files.length > 200 || item.files.some((file: unknown) => typeof file !== 'string' || !file || file.startsWith('/') || file.includes('..'))))) {
       throw new Error('Each task requires an id, a description, and an optional check command');
     }
-    if (Object.keys(item).some(key => !['id', 'task', 'check'].includes(key))) throw new Error(`Unknown field in task ${item.id}`);
+    if (Object.keys(item).some(key => !['id', 'task', 'check', 'files'].includes(key))) throw new Error(`Unknown field in task ${item.id}`);
     if (ids.has(item.id)) throw new Error(`Duplicate task id: ${item.id}`);
     ids.add(item.id);
-    return { id: item.id, task: item.task, ...(item.check ? { check: item.check as string } : {}) };
+    return { id: item.id, task: item.task, ...(item.check ? { check: item.check as string } : {}), ...(Array.isArray(item.files) && item.files.length ? { files: (item.files as string[]).map(file => file.replace(/^\.\//u, '')) } : {}) };
   });
+}
+
+/** Run one coding task inside an existing worktree and collect its diff, changed files and verdict. */
+export function owns(owned: string[], file: string): boolean {
+  return owned.some(path => file === path || file.startsWith(path.endsWith('/') ? path : `${path}/`));
+}
+
+export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider, context?: unknown): Promise<TaskResult> {
+  let result: CodingResult | undefined;
+  let error: string | undefined;
+  try {
+    result = await runCodingAgent({ root: worktree, task: task.task, provider, check: task.check, context });
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : String(cause);
+  }
+  const diff = await gitOutput(worktree, ['diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--']);
+  const tracked = await gitOutput(worktree, ['diff', '--name-only', '-z', 'HEAD', '--']);
+  const untracked = await gitOutput(worktree, ['ls-files', '--others', '--exclude-standard', '-z']);
+  const changedFiles = [...new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean))];
+  const lastCheck = result?.checks.at(-1);
+  const outOfScope = task.files?.length ? changedFiles.filter(file => !owns(task.files as string[], file)) : [];
+  const status = error || !result?.completed ? 'failed' :
+    !task.check || !lastCheck || lastCheck.stale || outOfScope.length ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
+  return { task, worktree, status, result, error, changedFiles, ...(outOfScope.length ? { outOfScope } : {}), diff };
 }
 
 export async function runParallel(options: {
@@ -79,21 +110,7 @@ export async function runParallel(options: {
       if (index >= pending.length) return;
       const { task, worktree } = pending[index];
       options.onProgress?.(`Started ${task.id}`);
-      let result: CodingResult | undefined;
-      let error: string | undefined;
-      try {
-        result = await runCodingAgent({ root: worktree, task: task.task, provider: options.provider(task), check: task.check });
-      } catch (cause) {
-        error = cause instanceof Error ? cause.message : String(cause);
-      }
-      const diff = await gitOutput(worktree, ['diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--']);
-      const tracked = await gitOutput(worktree, ['diff', '--name-only', '-z', 'HEAD', '--']);
-      const untracked = await gitOutput(worktree, ['ls-files', '--others', '--exclude-standard', '-z']);
-      const changedFiles = [...new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean))];
-      const lastCheck = result?.checks.at(-1);
-      const status = error || !result?.completed ? 'failed' :
-        !task.check || !lastCheck || lastCheck.stale ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
-      const output: TaskResult = { task, worktree, status, result, error, changedFiles, diff };
+      const output = await executeTask(task, worktree, options.provider(task));
       results[index] = output;
       await writeFile(join(directory, `${task.id}.json`), JSON.stringify(output, null, 2));
       options.onProgress?.(`${task.id}: ${status}`);

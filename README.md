@@ -1,72 +1,159 @@
-# Coding Harness
+# Vlyn
 
-This private repository is the home of the complete standalone coding harness. The intended harness will support coding tasks through its own model loop, context handling, tool execution, and task-driven parallel workers.
+**A coding agent harness where you state a goal and the work splits itself.**
 
-The harness includes a coding loop for inspecting and editing a local project and a **Contract Rehearsal** capability for checking proposed JSON responses against consumer versions recorded in a deployment snapshot. Live infrastructure discovery and broader agent orchestration are future work.
+Vlyn plans independent tasks from your goal, gives each its own Git worktree and its own dependency graph, runs them in parallel, and records every step in a journal that survives crashes. No task files, no framework, no runtime dependencies: just Node.js.
 
-## Coding tasks
-
-Set `OPENAI_API_KEY` and choose a model that supports Chat Completions JSON mode. The task below lets the agent inspect and edit the current project, and run the supplied verification command.
-
-```sh
-node src/cli.ts code . --model YOUR_MODEL --task "Fix the failing test" --check "npm test"
+```text
+$ vlyn
+Vlyn — describe a goal, review the plan, let agents work in parallel.
+[n]ew goal · [r]esume · [l]ist runs · [d]octor · [q]uit > n
+What should Vlyn do? Make error messages consistent across the API and docs
+Verification command [npm test]:
+Plan for: Make error messages consistent across the API and docs
+  1. api-errors — Standardize error messages in src/api
+  2. docs-errors — Update the examples in docs/ to match
+plan> [go | edit N | drop N | add | replan | cancel] go
 ```
 
-The agent loads a root `AGENTS.md` when present, lists and reads files, creates files, and applies exact text replacements. It runs only the check supplied in `--check`. Changes are written to the project as the agent works. A task graph tracks observed file reads, edits, creations, checks, and resolved relative JavaScript or TypeScript imports from files the agent reads or changes. Import edges carry line numbers and update when the source is edited. The graph is available to the agent and in the final `--json` result. This initial discovery handles single-line static imports and exports, and gives a partial view of the project. Repository content, including files the agent reads, is sent to the configured model provider. The agent has a bounded number of turns and reports the changed files and check results. A check becomes stale when the agent edits a file afterward. When `--check` is supplied, the command exits successfully only if the last check passed and is current.
+## Why Vlyn
 
-## Parallel coding tasks
-
-Give independent tasks in a JSON file. Each check is a shell command you choose for that task.
-
-```json
-[
-  { "id": "api", "task": "Improve the API error message", "check": "npm test" },
-  { "id": "docs", "task": "Correct the usage example", "check": "npm test" }
-]
-```
-
-Run the batch from a clean Git repository root, supplying a model and `OPENAI_API_KEY`.
-
-```sh
-node src/cli.ts batch /path/to/project --tasks /path/to/tasks.json --model YOUR_MODEL --workers 3
-```
-
-Each task starts at the same committed revision in its own detached Git worktree. The command prints the location of the worktrees and writes a `run.json` report and one JSON result per task in that directory. Each result includes the task graph, check results, changed filenames and the tracked-file diff. New files are available in their task worktree. Review and apply changes from the worktrees using Git. The harness leaves them in place, and they can be removed with `git worktree remove` when finished. Run artifacts are placed in the operating system's temporary directory and may be cleaned up by the system. Dependencies ignored by Git, such as `node_modules`, are not copied into new worktrees.
-
-Workers claim independent tasks from the batch until none remain. The default is three workers. Tasks without a passing current check are reported as unverified or failed, and the batch exits nonzero. The batch queue runs in memory, so an interrupted batch leaves its existing worktrees and completed task reports for inspection.
-
-## Try it
-
-Use Node.js 24.12 or newer. The CLI uses Node's built-in TypeScript and SQLite support. It needs no installation for the demo.
-
-```sh
-node src/cli.ts run examples/payments
-node src/cli.ts status examples/payments --json
-```
-
-The staging sample detects that `export-v1` still reads the removed `customer_id` field. Billing passes. Reports appears as a coverage gap because the fixture has no contract for `reports-v2`. The demo returns exit code `2` because it finds an incompatibility.
-
-| Command | Behavior |
+| | |
 | --- | --- |
-| `plan <workspace>` | Discover known consumer contracts and record input versions without running checks. |
-| `run <workspace>` | Run ready checks with up to three workers by default. Use `--workers N` to change concurrency. |
-| `status <workspace>` | Reopen the last observed report, including evidence and any stale results. |
+| **Goals, not task lists** | `vlyn auto --goal "…"` asks the model for a spec (non-goals, assumptions, acceptance criteria, risks) and independent tasks, each owning specific files. Tasks that overlap or depend on each other are merged, so what remains can run in parallel. |
+| **Contracts, not hopes** | Each agent gets the spec and its file ownership. Edits outside owned files make a task `unverified`. When several tasks finish, Vlyn applies all results onto a fresh copy of the base and re-runs the checks there. |
+| **Durable execution** | Runs live in a SQLite journal (`~/.vlyn`). Close the terminal, lose power, or press Ctrl+C: `vlyn resume` keeps finished tasks and restarts only the interrupted one from a clean base. |
+| **Interactive TUI** | `vlyn` opens a session: describe a goal, edit the plan, watch a live board, review diffs per task. No dependencies; works over SSH. |
+| **Task graphs** | Every agent sees a small graph of what it read, edited and checked, plus the static import graph around it. Agents can ask which files and tests a change affects. |
+| **Isolation** | One detached worktree per task at the same commit. Your checkout is never touched. |
+| **Honest verdicts** | A task is `completed` only if its last check passed after its last edit. Otherwise it is `unverified` or `failed`. |
 
-All commands support `--json` and `--db PATH`. The default database is `.rehearsal.sqlite` in the fixture workspace. `run` rereads the inputs before reporting and rechecks affected versions when they change. `status` reads the last stored snapshot. `run` returns `0` for complete, passing coverage, `2` for a failing check, `3` for incomplete verification, and `1` for a command or input error.
+## Quick start
 
-## Workspace format
+Needs Node.js 24.12 or newer and Git, plus a key for any model system (see [Models and gateways](#models-and-gateways)).
 
-- `provider/base.json` and `provider/candidate.json` contain captured JSON response objects.
-- `deployment.json` lists the environment, whether the supplied inventory is `complete` or `partial`, and the deployed `service` and `revision` values. Multiple revisions of the same service are supported.
-- Each regular `.json` file in `contracts/` contains a `service`, a `revision`, and a list of required field `expects`. Each expectation has a `path` of JSON property names or array indices as strings, and a `type` of `string`, `number`, `boolean`, `object`, `array`, or `null`.
+```sh
+export VLYN_API_KEY=…      # or OPENAI_API_KEY, LITELLM_API_KEY, ANTHROPIC_API_KEY
+cd your-project            # a clean Git repository root
 
-The demo uses captured response fixtures and synthetic deployment revisions. The runtime runs directly in Node.js. Live infrastructure discovery, running service binaries, and code edits are future work.
+vlyn doctor                # check Node, Git, endpoint and tree state
+vlyn models                # list the models your key can use
+vlyn                       # interactive session
+vlyn auto --goal "Add input validation to the CLI" --check "npm test"
+vlyn auto --goal "…" --plan-only     # see the generated tasks first
+vlyn runs                  # list runs
+vlyn resume                # continue the latest unfinished run
+```
 
-## Optional model planning
+From a clone, use `node src/cli.ts` in place of `vlyn`, or `npm link` to install the command.
 
-`run --model <model-name>` enables direct OpenAI API planning with `OPENAI_API_KEY`. Use a model that supports JSON mode in Chat Completions. The model sees service names, changed field paths and types, and contract field expectations when it asks for them. The harness keeps captured response values and local paths out of these requests. The model can inspect and prioritize existing checks. The runtime verifies every eligible result and reports the outcome using the same rules with or without a model.
+Repository content, including files agents read, is sent to the configured model provider.
 
-## Development checks
+## Models and gateways
+
+Vlyn works with any OpenAI-compatible endpoint (OpenAI, LiteLLM and other AI gateways, OpenRouter, vLLM, Ollama, LM Studio) and with Anthropic's native API.
+
+| Setting | Meaning |
+| --- | --- |
+| `VLYN_API_KEY` | Your key. Falls back to `LITELLM_API_KEY`, `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`. |
+| `VLYN_BASE_URL` / `--base-url` | Endpoint, e.g. `https://gateway.example.com/v1`. Must be https, except for localhost or with `VLYN_ALLOW_INSECURE=1`. Local servers need no key. |
+| `VLYN_PROVIDER` | `anthropic` to force the native Anthropic API when both kinds of key are set. |
+| `VLYN_MODEL` / `--model` | A model id, or `auto` (the default). |
+| `VLYN_MODEL_REFRESH_SECONDS` | How often the TUI refreshes the model list in the background (default 600). |
+
+**Models refresh themselves.** Vlyn reads the model list from your endpoint with your own key (`GET /models`, which LiteLLM, OpenRouter, Ollama and the others expose), caches it by a hash of endpoint and key, and refreshes it when stale. A failed refresh keeps the last known list. With `auto`, Vlyn chooses from the live list; if the chosen model is retired or rejected mid-run it refreshes, chooses again and retries once. Pin a model to opt out. The TUI announces added and removed models as they happen, and `vlyn models --refresh` fetches on demand. The choice among models in `auto` is a heuristic that prefers stronger families; pin a model when it matters.
+
+Gateways that reject JSON mode are retried without it, and JSON is extracted from fenced or prefixed replies. Keys are never written to the cache or to error messages.
+
+## Durable execution
+
+Every state change is committed before work continues: the plan, each task's status, its result, and a timeline of events. Worktrees live in the journal folder, not in a temporary directory.
+
+- **Resume**: `vlyn resume [id]` runs only pending tasks. A task found mid-flight is reset to the run's base revision, with partial edits and untracked files removed, and retried.
+- **Single owner**: a run records the process executing it; a second executor is refused while that process is alive.
+- **Ctrl+C**: stops claiming new tasks, lets running ones finish and record, and prints the resume command.
+- **Where**: `~/.vlyn`, or `VLYN_HOME` / `--home`. The journal is outside your repository, so it never dirties your tree.
+- **Cleanup**: `discard` in the review prompt removes a run's worktrees and journal entries.
+
+## Specs, ownership and convergence
+
+The planner writes a short spec before any code is touched, and each task declares the files it owns. Vlyn enforces that contract rather than trusting it:
+
+- Tasks whose owned files overlap, or that depend on one another, are merged into one task.
+- Every agent receives the spec, its own files and the files others own, and is told to report assumptions it could not confirm.
+- A task that changes files it does not own is `unverified`, even if its check passed.
+- **Convergence**: after a run, Vlyn applies every completed task's diff in a separate `_integration` worktree, reports conflicts, and runs the distinct check commands on the combined result. Your checkout is never changed. The result is stored in the journal.
+
+## Memory
+
+Before planning, Vlyn recalls what earlier runs in the same repository learned: which tasks failed, which edited files outside their ownership, which combined results did not integrate. It reads this straight from the journal, so nothing is copied and nothing goes stale, and each item names its run. Recall is ranked by shared goal words and files (failures first) and capped at five items and about 2 KB, so it informs the planner without flooding it. Planned next: turning recurring lessons into reviewed `AGENTS.md` suggestions and validated reusable procedures.
+
+## Interactive session
+
+| Prompt | Commands |
+| --- | --- |
+| main | `n` new goal, `r [id]` resume, `l` list runs, `d` doctor, `q` quit |
+| plan | `go`, `edit N`, `drop N`, `add`, `replan`, `cancel` |
+| review | `diff N`, `files N`, `discard`, `back` |
+
+The board redraws in place on a terminal and prints plain lines when piped.
+
+## Project tools (no model needed)
+
+```sh
+vlyn graph .                         # files, imports, cycles, unresolved imports, unreferenced files
+vlyn graph . --format mermaid        # or dot, json
+vlyn impact . --file src/api.ts      # what imports it, and which tests to run first
+vlyn impact . --since main           # same, for everything changed since a revision
+vlyn doctor .
+```
+
+The graph reads static relative imports in JavaScript and TypeScript (`import`, multi-line imports, `export … from`, `import()`, `require`), maps `.js` specifiers to `.ts` files, and ignores `node_modules`, build output and symbolic links. Dynamic loading and package imports are invisible, so treat results as a lower bound. `graph` exits `2` when it finds an import cycle, which makes it usable in CI.
+
+## Lower-level commands
+
+```sh
+vlyn code . --task "Fix the failing test" --check "npm test"      # one agent, working in place
+vlyn batch . --tasks tasks.json --model NAME --workers 3          # hand-written task file
+```
+
+The agent loads a root `AGENTS.md`, lists and reads files, creates files, applies exact single-match replacements, runs only the check you supplied, and can ask for its task graph or the impact of a file. Files over 200 KB and binary files are refused. A check goes stale when the agent edits afterward; `code` exits `0` only when the final check passed and is current.
+
+## Contract rehearsal
+
+Vlyn's first capability checks proposed JSON responses against consumer contracts recorded in a deployment snapshot, so a rename that breaks a deployed consumer is found before rollout.
+
+```sh
+vlyn run examples/payments        # exit 2: export-v1 still reads the removed customer_id
+vlyn status examples/payments --json
+```
+
+`plan`, `run` and `status` take `--workers N`, `--db PATH` and `--json`; `run` exits `0` for complete passing coverage, `2` for a failing check, `3` for incomplete verification and `1` for input errors. Workspace format: `provider/base.json` and `provider/candidate.json` response captures, `deployment.json` listing environment, inventory (`complete` or `partial`) and deployed service revisions, and `contracts/*.json` with required field `expects`. `run --model NAME` lets the model order checks; the runtime still verifies every one. Live infrastructure discovery is not built yet.
+
+## Architecture
+
+| Module | Role |
+| --- | --- |
+| `src/coding-agent.ts` | Model loop with scoped tools and a per-task graph |
+| `src/providers.ts` | Any OpenAI-compatible or Anthropic endpoint, live model catalog and refresh |
+| `src/memory.ts` | Recall of earlier outcomes from the journal, ranked and size-capped |
+| `src/planner.ts` | Goal → spec and validated, independent tasks with file ownership |
+| `src/durable.ts` | SQLite journal, run creation, recovery, resumable executor, convergence |
+| `src/parallel.ts` | One task in one worktree; the batch runner |
+| `src/graph.ts`, `src/tools.ts` | Import graph, impact, cycles, doctor |
+| `src/tui.ts` | Dependency-free interactive session |
+| `src/scheduler.ts`, `src/state.ts` | Contract rehearsal workers and event log |
+
+## Limitations
+
+- Model access is OpenAI-compatible Chat Completions plus native Anthropic. Native Gemini and Bedrock need a gateway such as LiteLLM in front.
+- Tool use is Vlyn's own JSON action protocol, not each vendor's native tool calling.
+- Tasks are independent by design. Vlyn builds a combined `_integration` worktree and checks it, but does not change your checkout; review with `diff N` or Git and apply what you want.
+- File ownership is declared by the model and checked after the fact; it cannot guarantee semantic independence.
+- Dependency discovery covers JavaScript and TypeScript relative imports.
+- Cross-repository reasoning is planned, not built.
+
+## Development
 
 ```sh
 npm ci --ignore-scripts
@@ -74,4 +161,4 @@ npm run check
 npm test
 ```
 
-GitHub Actions runs these checks on pull requests and pushes to `main`. The matrix covers the minimum supported Node.js version on Linux and Node.js 26 on Linux, macOS, and Windows. `CI result` combines the matrix into one status check. The tests include the CLI's plan, run, and status commands and use a simulated model response.
+CI runs both on Linux (Node 24.12 and 26), macOS and Windows. Tests use scripted model replies and temporary Git repositories; see [CONTRIBUTING.md](CONTRIBUTING.md).
