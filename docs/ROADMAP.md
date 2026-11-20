@@ -23,7 +23,7 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 15 | Lesson store: consolidation, decay, reconsolidation, claim status, reviewed `AGENTS.md` suggestion | done (PR #6) | `src/lessons.ts`. Folds phase 8. `vlyn lessons` prints a suggestion. `--apply` writes only the marked section of AGENTS.md |
 | 16 | Actor brain snapshots in the journal: pool, resume, revert, fork, one-for-one supervisor, role templates | done (PR #5) | `src/actors.ts`, `src/actor-coding.ts`, ADR 0001. `vlyn actors` lists rows. A goal run does not create them. No Substrate dependency. Git worktrees still hold the files |
 | 17 | Pre-mortem gate, after-action note, `vlyn converge`, apply onto a named new branch | done (PR #8) | `src/premortem.ts`, `applyToBranch`. A risk at 0.7 blocks edits unless `--proceed` or `force` |
-| 18 | Capability sandbox and parent broker | in PR #9 | Keys stay in the parent. Doctor must say if the network is really confined. No Landlock/seccomp claim, no Docker |
+| 18 | Capability sandbox and parent broker: manifest, scrubbed secrets, audit hash chain, honest OS posture | done (PR #9) | `src/sandbox.ts`, `src/broker.ts`, threat model, ADR 0002. No Landlock or seccomp claim. No Docker |
 | 19 | Toolchain: TypeScript 7 strict flags, Biome, split CI, supply-chain workflows | done (PR #10) | Node 24 and 26 on three OS. `isolatedDeclarations` off while the package is private and `noEmit`. No npm publish. CodeQL and dependency review run only for a public repo or when `ENABLE_CODEQL` / `ENABLE_DEPENDENCY_REVIEW` is set. Private CI uses `npm audit` on the lockfile |
 
 ## Research-grounded order

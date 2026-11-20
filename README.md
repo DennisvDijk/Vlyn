@@ -6,7 +6,7 @@
 
 **A coding tool: one goal becomes parallel tasks, each checked, each in its own git worktree.**
 
-The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, repeated failures become lessons the next plan can see, and `vlyn eval` scores scripted verdicts. The sandbox is **planned**. What runs today is the planner, the journal, actor snapshots, lessons, the scripted eval, a pre-mortem gate, apply onto a new branch, and verdicts that follow the check.
+The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, repeated failures become lessons the next plan can see, and `vlyn eval` scores scripted verdicts. Checks run under the sandbox this operating system can actually enforce. What runs today is the planner, the journal, actor snapshots, lessons, the scripted eval, a pre-mortem gate, apply onto a new branch, and verdicts that follow the check.
 
 No runtime dependencies. Node.js and Git.
 
@@ -86,13 +86,21 @@ Repeated failed or out-of-scope edits become claims in the journal (`unverified`
 
 `vlyn converge [id]` rebuilds the `_integration` worktree and re-runs the checks. `vlyn apply [id] --branch NAME` commits that result and creates the branch. It does not check out the branch and it does not change the files in your working tree. Guide: [docs/how-to/premortem-and-apply.md](docs/how-to/premortem-and-apply.md).
 
+## Security
+
+Checks run with a capability manifest: the task's files, the exact check string, and no child network unless this machine cannot actually enforce that. The API key stays in the parent process. Check environments drop variables whose names look like secrets, and those values are redacted out of tool output and the audit log.
+
+`vlyn doctor` prints which confinement is real on this OS (`unshare`, bubblewrap, `sandbox-exec`, Node's `--permission`, or only the in-process gate). Landlock and seccomp are not on. Node's permission model is a seatbelt for trusted code, and on Node 24 it did not stop outbound TCP; the doctor line says when the network is actually cut. `--require-sandbox` refuses a check we cannot confine. `vlyn audit [run]` prints the hash-chained log and exits 2 if a row was edited. Guide: [docs/how-to/sandbox-and-audit.md](docs/how-to/sandbox-and-audit.md).
+
+One local sample of a no-op check was 24 ms sandboxed against 21 ms plain (`docs/security/overhead.json`). That is one machine, not a promise. The threat model is [docs/security/threat-model.md](docs/security/threat-model.md). The decision is [docs/adr/0002-capability-sandbox.md](docs/adr/0002-capability-sandbox.md).
+
 ## Limitations
 
 These are limits of the code on this branch, not a roadmap in disguise.
 
 - Model access is OpenAI-compatible Chat Completions, plus Anthropic's native API. Gemini and Bedrock need a gateway such as LiteLLM in front.
 - Tools are Vlyn's own JSON action protocol. Vendor-native tool calling is not implemented.
-- The check command runs as your user. A sandbox that keeps the API key out of that process is planned, not built. Do not point a check at a secret you would not hand a shell script.
+- A check is network-confined only when `unshare`, bubblewrap, or `sandbox-exec` is what launches it. Node's `--permission` flag limits file reads for `node` checks and, on Node 24.12, did not block `net.connect`. Landlock and seccomp are not used. `--require-sandbox` refuses that weaker case. `vlyn batch` does not pass the flag through.
 - `vlyn apply --branch NAME` creates a new branch from the integration commit. It does not check out that branch and it does not change the files in your working tree. Integration has to pass first.
 - File ownership is whatever the model declared. Overlap is merged. Semantic independence is not proved.
 - The import graph is JavaScript and TypeScript relative imports only. Dynamic imports and package imports are invisible. The default text format and `--format json` exit 2 on a cycle. Mermaid and dot exit 0. Treat the graph as a lower bound.

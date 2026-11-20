@@ -5,6 +5,7 @@ import {
 } from './graph.ts';
 import type { ProjectGraph } from './graph.ts';
 import { resolveConfig } from './providers.ts';
+import { posture } from './sandbox.ts';
 
 export type ToolOutput = { code: number; text: string; json: unknown };
 export type GraphFormat = 'text' | 'json' | 'mermaid' | 'dot';
@@ -103,7 +104,14 @@ export async function doctorTool(directory: string, env: NodeJS.ProcessEnv = pro
     if (config) { configured = true; endpoint = `${config.kind} · ${config.baseUrl} · key from ${config.keyName} · model ${config.model}`; }
   } catch (error) { endpoint = error instanceof Error ? error.message : String(error); }
   checks.push({ name: 'Model endpoint configured', ok: configured, detail: endpoint, required: false });
+  const box = posture();
+  checks.push({
+    name: 'Check sandbox',
+    ok: box.isolates,
+    detail: `${box.driver} · files ${box.filesystem} · network ${box.network} · landlock off · seccomp off`,
+    required: false,
+  });
   const failed = checks.some(check => check.required && !check.ok);
   const text = checks.map(check => `${check.ok ? 'ok  ' : check.required ? 'FAIL' : 'warn'} ${check.name} · ${check.detail}`).join('\n');
-  return { code: failed ? 1 : 0, json: { checks }, text };
+  return { code: failed ? 1 : 0, json: { checks, sandbox: box }, text };
 }
