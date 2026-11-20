@@ -9,17 +9,35 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 1 | Contract rehearsal: check proposed responses against deployed consumer contracts | done | `src/scheduler.ts`, `src/state.ts` |
 | 2 | Standalone coding loop with per-task graph | done (PR #1) | `src/coding-agent.ts` |
 | 3 | Parallel tasks in isolated Git worktrees | done (PR #2) | `src/parallel.ts` |
-| 4 | Goal-driven planning, durable runs, interactive TUI, graph/impact/doctor tools | in PR #3 | `planner.ts`, `durable.ts`, `tui.ts`, `graph.ts`, `tools.ts` |
-| 5 | Every model system, live model refresh from the user's key (LiteLLM etc.) | in PR #3 | `providers.ts` |
-| 6 | Spec, file ownership, convergence of parallel results | in PR #3 | merge on overlap; out-of-scope edits are `unverified`; `_integration` worktree |
-| 7 | Memory, step 1: recall earlier run outcomes before planning | in PR #3 | `memory.ts`, read from the journal |
-| 8 | Memory, steps 2–5: typed memory with provenance, post-run reflection, validated procedures, agent context budget | next | Needs real runs to show which lessons recur. Research: Retrieval and spacing, CoALA, Reflexion, Voyager, MemGPT |
-| 9 | Run against a live model; fix what scripted tests hid | next | Biggest unknown; do before adding more features |
-| 10 | `vlyn converge` command and applying a combined result to a branch | next | Convergence today only runs at the end of a run |
+| 4 | Goal-driven planning, durable runs, interactive TUI, graph/impact/doctor tools | done (PR #3) | `planner.ts`, `durable.ts`, `tui.ts`, `graph.ts`, `tools.ts` |
+| 5 | Every model system, live model refresh from the user's key (LiteLLM etc.) | done (PR #3) | `providers.ts` |
+| 6 | Spec, file ownership, convergence of parallel results | done (PR #3) | merge on overlap; out-of-scope edits are `unverified`; `_integration` worktree |
+| 7 | Memory, step 1: recall earlier run outcomes before planning | done (PR #3) | `memory.ts`, read from the journal |
+| 8 | Memory, steps 2–5: typed memory with provenance, post-run reflection, validated procedures, agent context budget | next | Folded into phase 15. Do not start a second memory design |
+| 9 | Run against a live model; fix what scripted tests hid | next | Still the largest unknown. Phase 14 is scripted on purpose and does not close this |
+| 10 | `vlyn converge` command and applying a combined result to a branch | next | Folded into phase 17. Convergence today only runs at the end of a run |
 | 11 | Cross-repository and deployed-service reasoning (repos, Terraform, YAML, Kubernetes as nodes and edges) | later | Vlyn's main differentiator; not built |
 | 12 | Native tool calling per vendor; Gemini and Bedrock without a gateway | later | |
 | 13 | GitLab CI alongside GitHub Actions | later | Requested for the wider project 2026-11-17 |
-| 19 | Toolchain: TypeScript 7 strict flags, Biome, split CI, supply-chain workflows | in PR | Node 24 and 26 on three OS. `isolatedDeclarations` off while the package is private and `noEmit`. No npm publish. CodeQL and dependency review run only for a public repo or when `ENABLE_CODEQL` / `ENABLE_DEPENDENCY_REVIEW` is set. Private CI uses `npm audit` on the lockfile |
+| 14 | Decision journal and `vlyn eval`: confidence recorded before the verdict, Brier score, honesty rate | next | Coding outcome: a vain 0.9 cannot hide a failed check. Scripted suite only; no live endpoint in CI. See docs/research/state-of-the-art.md |
+| 15 | Lesson store: consolidation, decay, reconsolidation, claim status, reviewed `AGENTS.md` suggestion | next | Folds phase 8. Outcome: the next plan avoids a repeated out-of-scope edit. Does not write the repo unless `--apply` |
+| 16 | Actor brain snapshots in the journal: pool, resume, revert, fork, one-for-one supervisor, role templates | next | Outcome: parallel hypotheses and crash restart without a second copy of the checkout. No Substrate dependency. ADR with the code |
+| 17 | Pre-mortem gate, after-action note, `vlyn converge`, apply onto a named new branch | next | Folds phase 10. Outcome: ambiguous plans do not edit; apply never checks out the user's branch |
+| 19 | Toolchain: TypeScript 7 strict flags, Biome, split CI, supply-chain workflows | done (PR #10) | Node 24 and 26 on three OS. `isolatedDeclarations` off while the package is private and `noEmit`. No npm publish. CodeQL and dependency review run only for a public repo or when `ENABLE_CODEQL` / `ENABLE_DEPENDENCY_REVIEW` is set. Private CI uses `npm audit` on the lockfile |
+
+## Research-grounded order
+
+The argument is [research/state-of-the-art.md](research/state-of-the-art.md). Vlyn stays a coding tool. The brain and safety literature is analogy, with the limits in that note. Priority is the coding outcome, then whether a scripted test can show it.
+
+| Order | Phase | Why this, and not a lookalike feature | Effort | How it is measured |
+| --- | --- | --- | --- | --- |
+| 1 | 16 Actor snapshots | Resume, revert, and fork are the difference between one contaminated workspace and two hypotheses you can compare. Substrate is credited as the idle-checkpoint picture; the implementation is SQLite | New module, journal tables, tests, ADR. Does not replace git worktrees | Cross-connection resume; supervisor restores the pre-crash brain; `raceHypotheses` keeps dissent and accepts only `completed` |
+| 2 | 14 Decision journal and eval | Without a number, later phases cannot show they helped. Honesty and calibration are different numbers on purpose | New command and a committed baseline. No new runtime dependency | Pass rate, honesty rate, Brier, estimated tokens. Wall time is recorded and not pinned. Cost is null |
+| 3 | 15 Lessons | Phase 8's "typed memory." Stops the planner repeating a known-bad file | Lesson table, recall budget, `--apply` off by default | Usefulness: the prompt contains the lesson and a scripted planner avoids the file. Retracted claims are not recalled. Strength decays when nothing reinforces them |
+| 4 | 17 Pre-mortem, review, converge, apply | Phase 10, plus a stop before editing when the independent pass is uneasy | Planner gate, AAR text, branch create | Gate blocks edits; AAR names the failed task; `apply --branch` leaves HEAD and the checkout file bytes unchanged |
+| later | 9 Live model | Scripted tests cannot see a model ignore the lesson | A person's key, outside CI | Write down which scripted cases hid a real failure. Do not treat phase 14 as a substitute |
+| later | 11 Cross-repository | Still the long bet in the table above. Not started | Large | Not this round |
+| not planned | Native vendor tool catalogs, tree-sitter repo maps, a general sandbox product | They make Vlyn look like other harnesses. They are in the research note only as things we are not copying | — | — |
 
 ## Working together (people and bots)
 
