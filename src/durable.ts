@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AgentProvider } from './coding-agent.ts';
 import { executeTask, gitOutput } from './parallel.ts';
 import type { CodingTask, TaskResult } from './parallel.ts';
+import { afterAction } from './premortem.ts';
 import { briefFor } from './planner.ts';
 import type { Spec } from './planner.ts';
 
@@ -230,6 +231,14 @@ export async function executeRun(journal: Journal, runId: string, options: {
     convergence = await converge(journal, run.id);
     say(convergence.passed ? 'Integration: all results combine cleanly and checks pass' : `Integration: ${convergence.conflicts.length} conflicts, ${convergence.checks.filter(check => check.exitCode !== 0).length} failing checks`);
   }
+  if (done) {
+    const note = afterAction({
+      goal: run.goal,
+      tasks: tasks.map(task => ({ id: task.task.id, status: task.status })),
+      ...(convergence ? { integrationPassed: convergence.passed } : {}),
+    });
+    say(`After action: ${note.difference} ${note.change}`);
+  }
   return { run: journal.run(run.id) as RunRow, tasks, ...(convergence ? { convergence } : {}) };
 }
 
@@ -289,4 +298,33 @@ export async function converge(journal: Journal, runId: string): Promise<Converg
   result.passed = result.conflicts.length === 0 && result.applied.length > 0 && result.checks.every(check => check.exitCode === 0);
   journal.db.prepare('INSERT OR REPLACE INTO convergence (run_id, result) VALUES (?, ?)').run(run.id, JSON.stringify(result));
   return result;
+}
+
+/**
+ * Commit the integration worktree and point a new branch at that commit.
+ * The checkout's HEAD and branch are not changed.
+ */
+export async function applyToBranch(journal: Journal, runId: string, branch: string): Promise<{ branch: string; commit: string }> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,80}$/u.test(branch) || branch.includes('..') || branch.endsWith('/') || branch.endsWith('.lock')) {
+    throw new Error('Branch name must be a simple git ref without ".."');
+  }
+  const run = journal.run(runId);
+  if (!run) throw new Error(`No run ${runId}`);
+  const beforeHead = (await gitOutput(run.root, ['rev-parse', 'HEAD'])).trim();
+  const beforeBranch = (await gitOutput(run.root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  const exists = await gitOutput(run.root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
+  if (exists) throw new Error(`Branch ${branch} already exists`);
+  const convergence = journal.convergence(run.id) ?? await converge(journal, run.id);
+  if (!convergence.passed) throw new Error('Integration did not pass. Nothing was applied.');
+  if ((await gitOutput(convergence.worktree, ['status', '--porcelain'])).trim()) {
+    await gitOutput(convergence.worktree, ['add', '-A']);
+    await gitOutput(convergence.worktree, ['-c', 'commit.gpgsign=false', 'commit', '-m', `Apply Vlyn run ${run.id.slice(0, 8)}`]);
+  }
+  const commit = (await gitOutput(convergence.worktree, ['rev-parse', 'HEAD'])).trim();
+  await gitOutput(run.root, ['branch', branch, commit]);
+  const afterHead = (await gitOutput(run.root, ['rev-parse', 'HEAD'])).trim();
+  const afterBranch = (await gitOutput(run.root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  if (afterHead !== beforeHead || afterBranch !== beforeBranch) throw new Error('Apply moved the checkout. This is a bug.');
+  journal.event(run.id, `Applied integration to branch ${branch} at ${commit.slice(0, 8)}`);
+  return { branch, commit };
 }

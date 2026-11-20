@@ -128,10 +128,11 @@ test('the interactive TUI plans from a goal, lets the person edit the plan, runs
   let text = '';
   output.on('data', chunk => { text += chunk.toString(); });
   const model = async (messages: { role: string; content: string }[]) => {
-    if (messages[0]?.content.startsWith('You turn')) {
+    const system = messages[0]?.content ?? '';
+    if (system.startsWith('You are reviewing a coding plan')) return JSON.stringify({ risks: [] });
+    if (system.startsWith('You turn')) {
       return JSON.stringify({ tasks: [{ id: 'alpha', task: 'Change alpha' }, { id: 'beta', task: 'Change beta' }, { id: 'extra', task: 'Not wanted' }] });
     }
-    const system = messages[0]?.content ?? '';
     assert.match(system, /coding agent/u);
     const mine = (messages[1]?.content ?? '').includes('Change alpha') ? edit('a.txt', 'alpha', 'A') : edit('b.txt', 'beta', 'B');
     return JSON.stringify(mine[messages.filter(message => message.role === 'assistant').length]);

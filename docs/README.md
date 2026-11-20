@@ -17,6 +17,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 | List actor snapshots in the journal | [Actor snapshots](how-to/actor-snapshots.md) |
 | Review lesson claims and write the marked section of AGENTS.md | [Lessons](how-to/lessons.md) |
 | Score the scripted eval | [Eval](how-to/eval.md) |
+| Stop a risky plan, then apply the result to a new branch | [Pre-mortem and apply](how-to/premortem-and-apply.md) |
 | Change the code | [Contributing](how-to/contributing.md) |
 
 ## Reference

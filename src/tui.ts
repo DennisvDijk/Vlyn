@@ -7,6 +7,7 @@ import type { AgentProvider } from './coding-agent.ts';
 import { executeRun } from './durable.ts';
 import type { Journal, RunRow, TaskRow, TaskStatus } from './durable.ts';
 import { planningMemory } from './lessons.ts';
+import { planGate, preMortem } from './premortem.ts';
 import { planTasks } from './planner.ts';
 import type { CodingTask } from './parallel.ts';
 import type { ModelCatalog } from './providers.ts';
@@ -105,11 +106,16 @@ export async function runTui(options: TuiOptions): Promise<number> {
     let tasks: CodingTask[] = plan.tasks;
     for (;;) {
       print('', `Plan for: ${clean(goal)}`, ...tasks.map((task, index) => `  ${index + 1}. ${clean(task.id)} — ${clean(task.task)}`), ...plan.warnings.map(warning => `  ! ${warning}`));
-      const answer = await ask('plan> [go | edit N | drop N | add | replan | cancel] ');
+      const answer = await ask('plan> [go | force | edit N | drop N | add | replan | cancel] ');
       if (answer === undefined || answer === 'cancel') return;
       const [command, number] = answer.split(/\s+/u);
       const index = Number(number) - 1;
-      if (command === 'go') break;
+      if (command === 'go' || command === 'force') {
+        const risks = await preMortem({ tasks }, options.provider);
+        const gate = planGate(risks, { proceed: command === 'force' });
+        if (!gate.edit) { print(`Pre-mortem: ${gate.reason ?? 'Risk is high.'}`, 'No files were edited. drop a task, or force to continue.'); continue; }
+        break;
+      }
       if (command === 'replan') { plan = await planTasks({ root: options.root, goal, provider: options.provider, memory: planningMemory(options.journal, options.root, goal), ...(check ? { check } : {}) }); tasks = plan.tasks; }
       else if (command === 'drop' && tasks[index]) tasks = tasks.filter((_, position) => position !== index);
       else if (command === 'edit' && tasks[index]) {
@@ -118,7 +124,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
       } else if (command === 'add') {
         const text = await ask('Instruction: ');
         if (text) tasks = [...tasks, { id: `extra-${tasks.length + 1}`, task: text, ...(check ? { check } : {}) }];
-      } else print('Commands: go, edit N, drop N, add, replan, cancel');
+      } else print('Commands: go, force, edit N, drop N, add, replan, cancel');
       if (!tasks.length) { print('No tasks left.'); return; }
     }
     const run = await options.journal.create({ root: options.root, goal, tasks, workers: options.workers ?? 3 });

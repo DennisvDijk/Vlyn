@@ -6,7 +6,7 @@
 
 **A coding tool: one goal becomes parallel tasks, each checked, each in its own git worktree.**
 
-The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, repeated failures become lessons the next plan can see, and `vlyn eval` scores scripted verdicts. The sandbox is **planned**. What runs today is the planner, the journal, actor snapshots, lessons, the scripted eval, and verdicts that follow the check.
+The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal, repeated failures become lessons the next plan can see, and `vlyn eval` scores scripted verdicts. The sandbox is **planned**. What runs today is the planner, the journal, actor snapshots, lessons, the scripted eval, a pre-mortem gate, apply onto a new branch, and verdicts that follow the check.
 
 No runtime dependencies. Node.js and Git.
 
@@ -80,6 +80,12 @@ Repeated failed or out-of-scope edits become claims in the journal (`unverified`
 
 `vlyn eval` runs a small scripted suite in temporary repositories. It reports how many verdicts matched the case, whether `completed` was used only when the last check passed after the last edit and inside the owned files, and a [Brier score](https://doi.org/10.1175/1520-0493(1950)078%3C0001:VOFEIT%3E2.0.CO;2) of confidences that were recorded before those verdicts. The suite does not call a model. Tokens are a character estimate. Cost is null. The committed numbers are in [docs/evals/baseline.json](docs/evals/baseline.json). They measure the harness, not a live model. Guide: [docs/how-to/eval.md](docs/how-to/eval.md).
 
+## Before and after a run
+
+`auto` asks a second, independent pass how the plan fails before it edits. A risk at confidence 0.7 or higher stops the run. `--proceed` continues anyway. The interactive session does the same on `go`; `force` is the override. When the run finishes, the journal stores a short after-action note from the task statuses and the integration result.
+
+`vlyn converge [id]` rebuilds the `_integration` worktree and re-runs the checks. `vlyn apply [id] --branch NAME` commits that result and creates the branch. It does not check out the branch and it does not change the files in your working tree. Guide: [docs/how-to/premortem-and-apply.md](docs/how-to/premortem-and-apply.md).
+
 ## Limitations
 
 These are limits of the code on this branch, not a roadmap in disguise.
@@ -87,7 +93,7 @@ These are limits of the code on this branch, not a roadmap in disguise.
 - Model access is OpenAI-compatible Chat Completions, plus Anthropic's native API. Gemini and Bedrock need a gateway such as LiteLLM in front.
 - Tools are Vlyn's own JSON action protocol. Vendor-native tool calling is not implemented.
 - The check command runs as your user. A sandbox that keeps the API key out of that process is planned, not built. Do not point a check at a secret you would not hand a shell script.
-- Convergence builds an `_integration` worktree and stops. There is no `vlyn apply`. Copy or cherry-pick the result yourself. Your checkout stays where it was.
+- `vlyn apply --branch NAME` creates a new branch from the integration commit. It does not check out that branch and it does not change the files in your working tree. Integration has to pass first.
 - File ownership is whatever the model declared. Overlap is merged. Semantic independence is not proved.
 - The import graph is JavaScript and TypeScript relative imports only. Dynamic imports and package imports are invisible. The default text format and `--format json` exit 2 on a cycle. Mermaid and dot exit 0. Treat the graph as a lower bound.
 - Memory is recall of earlier task rows plus lesson claims, capped at five items and about 2 KB. `vlyn lessons` prints the suggestion. `--apply` writes only the marked section of `AGENTS.md`.
