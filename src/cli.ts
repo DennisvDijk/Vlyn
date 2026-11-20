@@ -204,7 +204,7 @@ async function main(): Promise<number> {
           return 0;
         }
         const risks = await preMortem({ tasks: plan.tasks }, needModel('auto'));
-        const gate = planGate(risks, { proceed: values.proceed });
+        const gate = planGate(risks, { ...(values.proceed ? { proceed: true } : {}) });
         if (!gate.edit) {
           console.error(gate.reason);
           console.error('No files were edited. Pass --proceed to continue.');

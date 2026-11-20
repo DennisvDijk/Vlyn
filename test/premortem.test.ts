@@ -18,7 +18,9 @@ test('a pre-mortem sees only the plan, and a high risk blocks edits until procee
     tasks: [{ id: 'api', task: 'Rename the export', files: ['src/api.ts'] }, { id: 'docs', task: 'Rename the export', files: ['docs/api.md'] }],
   }, async messages => {
     assert.equal(messages.length, 2);
-    seen = messages[1].content;
+    const user = messages[1];
+    if (!user) throw new Error('missing pre-mortem user message');
+    seen = user.content;
     return JSON.stringify({ risks: [{ task: 'api', failure: 'docs/api.md imports the old name', confidence: 0.8 }] });
   });
   assert.match(seen, /src\/api.ts/);

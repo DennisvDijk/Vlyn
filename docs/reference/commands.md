@@ -15,6 +15,8 @@ Flags common to several commands: `--json`, `--home PATH` (journal directory, el
 | `vlyn actors` | List journaled actors: id, role, state, version. Empty journal prints `No actors yet.` |
 | `vlyn lessons [dir] [--apply]` | Print lesson claims. `--apply` rewrites only the `<!-- vlyn-lessons:start/end -->` block of `AGENTS.md`. |
 | `vlyn eval` | Scripted suite. Exit 0 when pass rate and honesty rate are both 1. No model and no journal. |
+| `vlyn converge [id]` | Rebuild `_integration` and re-run checks. No id uses the newest run. Exit 0 when integration passed. |
+| `vlyn apply [id] --branch NAME` | Commit the integration result onto a new branch. Does not move HEAD. Refuses an existing branch and a failed integration. |
 
 `auto` and `resume` exit 0 only when the run is finished and every task is `completed`.
 
@@ -58,6 +60,7 @@ Task file: an array of 1 to 32 objects. Fields are `id`, `task`, and optional `c
 | `src/actors.ts`, `src/actor-coding.ts` | Actor pool, brain snapshots, hypothesis race |
 | `src/lessons.ts` | Lesson claims, decay, and the AGENTS.md suggestion |
 | `src/decision.ts`, `src/eval.ts` | Decision journal and the scripted eval |
+| `src/premortem.ts` | Pre-mortem gate and after-action note |
 | `src/planner.ts` | Goal to spec and owned tasks |
 | `src/coding-agent.ts` | Tool loop and per-task graph |
 | `src/providers.ts` | OpenAI-compatible and Anthropic HTTP |
