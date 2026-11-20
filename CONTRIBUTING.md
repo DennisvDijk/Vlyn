@@ -48,6 +48,10 @@ npm audit --package-lock-only --audit-level=high
 
 `--omit=dev` is the production slice. This package has no production dependencies, so that command audits nothing. The second command audits the toolchain devDependencies, which is the whole lockfile, and fails on high or critical npm advisories. It uses the npm advisory database, not GitHub's dependency graph. A high advisory that exists only in GitHub's graph is invisible until dependency review is allowed to run.
 
+## License
+
+Vlyn is under the Apache License, Version 2.0 ([LICENSE](LICENSE)). Contributions are under that same license. Inbound equals outbound: a submitted change is licensed to the project under Apache-2.0.
+
 ## Commits
 
 Write the subject in the imperative, and say why in the body. Changesets are not used. They exist to version published packages, and this one is not published.
