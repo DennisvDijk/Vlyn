@@ -10,6 +10,12 @@ import { gitRepo, openJournal, tempDir, writeFiles } from './helpers.ts';
 
 const pass = 'node -e "process.exit(0)"';
 
+function at<T>(items: readonly T[], index: number, label: string): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`missing ${label}`);
+  return item;
+}
+
 async function seed(context: Parameters<typeof gitRepo>[0]) {
   const root = await gitRepo(context, { 'a.txt': 'alpha', 'b.txt': 'beta' });
   const opened = await openJournal(context);
@@ -35,11 +41,12 @@ test('two out-of-scope edits become one lesson, a second consolidate does not de
   const store = new LessonStore(journal);
   const first = store.consolidate(root);
   assert.equal(first.length, 1);
-  assert.equal(first[0].status, 'unverified');
-  assert.match(first[0].text, /b\.txt/);
-  const strength = first[0].strength;
-  assert.equal(store.consolidate(root)[0].strength, strength, 'the same outcomes are not decayed again');
-  store.retract(root, first[0].id);
+  const lesson = at(first, 0, 'lesson');
+  assert.equal(lesson.status, 'unverified');
+  assert.match(lesson.text, /b\.txt/);
+  const strength = lesson.strength;
+  assert.equal(at(store.consolidate(root), 0, 'lesson').strength, strength, 'the same outcomes are not decayed again');
+  store.retract(root, lesson.id);
   const again = store.consolidate(root);
   assert.equal(again.find(lesson => lesson.files.includes('b.txt'))?.status, 'retracted');
   assert.equal(store.recall(root).length, 0);
@@ -50,13 +57,15 @@ test('a clean later edit contests the lesson, and a repeated failure supports it
   const store = new LessonStore(journal);
   store.consolidate(root);
   const contested = store.reconsolidate(root, { files: ['b.txt'], status: 'completed' });
-  assert.equal(contested[0].status, 'contested');
-  assert.equal(contested[0].retrieved, 1);
+  const contestedLesson = at(contested, 0, 'contested lesson');
+  assert.equal(contestedLesson.status, 'contested');
+  assert.equal(contestedLesson.retrieved, 1);
   const supported = store.reconsolidate(root, { files: ['b.txt'], status: 'unverified' });
-  assert.equal(supported[0].status, 'supported');
-  const before = supported[0].retrieved;
+  const supportedLesson = at(supported, 0, 'supported lesson');
+  assert.equal(supportedLesson.status, 'supported');
+  const before = supportedLesson.retrieved;
   store.reconsolidate(root, { files: ['a.txt'], status: 'completed' });
-  assert.equal(store.recall(root)[0].retrieved, before);
+  assert.equal(at(store.recall(root), 0, 'recalled lesson').retrieved, before);
 });
 
 test('a lesson decays once the failures that supported it are gone', async context => {
@@ -65,7 +74,7 @@ test('a lesson decays once the failures that supported it are gone', async conte
   store.consolidate(root);
   await journal.discard(runId);
   const extra = await journal.create({ root, goal: 'Other', workers: 1, tasks: [{ id: 'side', task: 'leave b alone', check: pass, files: ['a.txt'] }] });
-  let strength = store.recall(root)[0].strength;
+  let strength = at(store.recall(root), 0, 'lesson').strength;
   for (let step = 0; step < 6; step += 1) {
     const row = journal.tasks(extra.id).find(item => item.task.id === 'side');
     if (!row) throw new Error('missing side task');
@@ -84,15 +93,15 @@ test('a lesson decays once the failures that supported it are gone', async conte
 test('the planner prompt carries the lesson and a scripted planner that reads it avoids the file', async context => {
   const { journal, root } = await seed(context);
   const memory = planningMemory(journal, root, 'Edit the text files');
-  assert.match(memory[0].note, /b\.txt/);
+  assert.match(at(memory, 0, 'memory').note, /b\.txt/);
   const provider = async (messages: { content: string }[]) => {
-    const avoid = messages[1].content.includes('Edits touching b.txt');
+    const avoid = at(messages, 1, 'planner message').content.includes('Edits touching b.txt');
     return JSON.stringify({ tasks: [{ id: 'next', task: 'edit a file', files: avoid ? ['a.txt'] : ['b.txt'] }] });
   };
   const withLesson = await planTasks({ root, goal: 'Edit the text files', provider, memory });
-  assert.deepEqual(withLesson.tasks[0].files, ['a.txt']);
+  assert.deepEqual(at(withLesson.tasks, 0, 'task').files, ['a.txt']);
   const without = await planTasks({ root, goal: 'Edit the text files', provider });
-  assert.deepEqual(without.tasks[0].files, ['b.txt']);
+  assert.deepEqual(at(without.tasks, 0, 'task').files, ['b.txt']);
 });
 
 test('applying a suggestion updates only the marked section of AGENTS.md', async context => {
