@@ -47,8 +47,9 @@ export async function openJournal(context: TestContext): Promise<{ journal: Jour
   const home = await realpath(await mkdtemp(join(tmpdir(), 'vlyn-home-')));
   const journal = new Journal(home);
   context.after(async () => {
+    try { journal.db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* already closed */ }
     try { journal.close(); } catch { /* already closed */ }
-    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await rm(home, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 });
   });
   return { journal, home };
 }

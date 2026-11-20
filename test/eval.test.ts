@@ -29,13 +29,14 @@ test('forecasts are stored before they are scored and survive a reopened journal
   assert.equal(decisions.all()[0]?.outcome, undefined);
   decisions.score(row.id, 0);
   assert.throws(() => decisions.score(row.id, 1), /already scored/);
-  journal.close();
   const { Journal } = await import('../src/durable.ts');
   const reopened = new Journal(home);
-  context.after(() => reopened.close());
   const again = new DecisionJournal(reopened);
   assert.equal(again.all()[0]?.outcome, 0);
   assert.equal(again.brier(), brierScore([{ confidence: 0.25, outcome: 0 }]));
+  // Windows keeps the WAL sidecar locked until the checkpoint runs.
+  reopened.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  reopened.close();
 });
 
 test('the scripted suite is honest and the recorded baseline matches its rates', async () => {
