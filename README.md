@@ -183,7 +183,7 @@ One local sample of a no-op check was 24 ms sandboxed against 21 ms plain (`docs
 These are limits of the code on this branch, not a roadmap in disguise.
 
 - Model access is OpenAI-compatible Chat Completions, plus Anthropic's native API. Gemini and Bedrock need a gateway such as LiteLLM in front.
-- Coding turns ask OpenAI-compatible and Anthropic endpoints for native tools. A text JSON action is the fallback when the model or gateway does not. Gemini and Bedrock still need a gateway. Guide: [docs/how-to/native-tools.md](docs/how-to/native-tools.md).
+- Coding turns stream native tools. `api.openai.com` uses the Responses API. Other OpenAI-compatible hosts use Chat Completions. Anthropic uses `tool_use` blocks. A text JSON action is the fallback. There is no `apply_patch`, ranged read, or general shell. The table is [docs/llm-parity.md](docs/llm-parity.md). Guide: [docs/how-to/llm-session.md](docs/how-to/llm-session.md).
 - A check is network-confined only when `unshare`, bubblewrap, or `sandbox-exec` is what launches it. Node's `--permission` flag limits file reads for `node` checks and, on Node 24.12, did not block `net.connect`. Landlock and seccomp are not used. `--require-sandbox` refuses that weaker case. `vlyn batch` does not pass the flag through.
 - `vlyn apply --branch NAME` creates a new branch from the integration commit. It does not check out that branch and it does not change the files in your working tree. Integration has to pass first.
 - File ownership is whatever the model declared. Overlap is merged. Semantic independence is not proved.

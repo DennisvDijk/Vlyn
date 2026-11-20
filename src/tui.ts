@@ -33,7 +33,7 @@ export type TuiOptions = {
 };
 
 /** Render a run as a compact status board. Pure, so it is easy to test. */
-export function board(run: Pick<RunRow, 'id' | 'goal' | 'status'>, tasks: TaskRow[], color = false): string[] {
+export function board(run: Pick<RunRow, 'id' | 'goal' | 'status'>, tasks: TaskRow[], color = false, live = ''): string[] {
   const paint = (style: 'green' | 'red' | 'yellow' | 'dim' | 'bold', text: string) => color ? styleText(style, text) : text;
   const done = tasks.filter(task => !['pending', 'running'].includes(task.status)).length;
   const bar = `[${'█'.repeat(done)}${'░'.repeat(tasks.length - done)}]`;
@@ -44,6 +44,7 @@ export function board(run: Pick<RunRow, 'id' | 'goal' | 'status'>, tasks: TaskRo
     lines.push(`${paint(style, icons[row.status])} ${index + 1}. ${clean(row.task.id)} ${paint('dim', `${row.status}${files}`)}`);
     lines.push(`     ${clean(row.task.task).slice(0, 100)}`);
   });
+  if (live) lines.push(paint('dim', clean(live).slice(-120)));
   return lines;
 }
 
@@ -63,11 +64,12 @@ export async function runTui(options: TuiOptions): Promise<number> {
     if (!options.provider) { print('A model is needed to run tasks. Set VLYN_API_KEY (and VLYN_BASE_URL for a gateway).'); return; }
     const provider = options.codingProvider ?? options.provider;
     const controller = new AbortController();
-    const stop = () => { controller.abort(); print('', 'Stopping after the running tasks finish. Resume any time with: resume ' + run.id.slice(0, 8)); };
+    const stop = () => { controller.abort(); print('', `Stopping after the running tasks finish. Resume any time with: resume ${run.id.slice(0, 8)}`); };
     process.once('SIGINT', stop);
     let drawn = 0;
+    let live = '';
     const draw = () => {
-      const lines = board(run, options.journal.tasks(run.id), color);
+      const lines = board(run, options.journal.tasks(run.id), color, live);
       if (color && drawn) options.output.write(`\x1b[${drawn}A\x1b[J`);
       print(...lines);
       drawn = lines.length;
@@ -76,6 +78,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
     try {
       await executeRun(options.journal, run.id, {
         provider: () => provider, signal: controller.signal,
+        onDelta: (_taskId, delta) => { live = (live + delta).slice(-400); if (color) draw(); else print(delta); },
         onEvent: event => { if (color) draw(); else print(`${event.message}`); },
       });
     } finally { process.removeListener('SIGINT', stop); }

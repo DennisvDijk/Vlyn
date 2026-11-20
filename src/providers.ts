@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentMessage, AgentProvider } from './coding-agent.ts';
+import { completeTurn } from './llm/session.ts';
+import { codingTools } from './llm/tools.ts';
+import { emptyUsage } from './llm/types.ts';
+import { costUsd } from './llm/request.ts';
 import { isObject } from './workspace.ts';
 
 /**
@@ -170,27 +174,13 @@ function anthropicMessages(messages: AgentMessage[]): { system: string; messages
   const system = messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n');
   const merged: { role: 'user' | 'assistant'; content: string }[] = [];
   for (const message of messages) {
-    if (message.role === 'system') continue;
+    if (message.role === 'system' || message.role === 'tool') continue;
     const last = merged.at(-1);
     if (last?.role === message.role) last.content += `\n\n${message.content}`;
     else merged.push({ role: message.role, content: message.content });
   }
   return { system, messages: merged };
 }
-
-type ToolSpec = { name: string; description: string; properties: Record<string, { type: string; description: string }>; required: string[] };
-
-/** One coding action. Sent as a native tool. A text JSON action remains the fallback. */
-export const codingTools: ToolSpec[] = [
-  { name: 'list', description: 'List a project directory', properties: { path: { type: 'string', description: 'Relative directory' } }, required: ['path'] },
-  { name: 'read', description: 'Read a project file', properties: { path: { type: 'string', description: 'Relative file' } }, required: ['path'] },
-  { name: 'replace', description: 'Replace one exact text match in a file', properties: { path: { type: 'string', description: 'Relative file' }, old: { type: 'string', description: 'Exact text that appears once' }, new: { type: 'string', description: 'Replacement text' } }, required: ['path', 'old', 'new'] },
-  { name: 'create', description: 'Create a new text file', properties: { path: { type: 'string', description: 'Relative file' }, content: { type: 'string', description: 'File text' } }, required: ['path', 'content'] },
-  { name: 'check', description: 'Run the user-supplied verification command', properties: {}, required: [] },
-  { name: 'graph', description: 'Return the task graph recorded so far', properties: {}, required: [] },
-  { name: 'impact', description: 'List importers and tests for a file', properties: { path: { type: 'string', description: 'Relative file' } }, required: ['path'] },
-  { name: 'finish', description: 'Stop and report what changed and what was verified', properties: { summary: { type: 'string', description: 'What changed and what was verified' } }, required: ['summary'] },
-];
 
 function openAITools() {
   return codingTools.map(tool => ({
@@ -230,7 +220,7 @@ function toolAction(kind: ProviderKind, body: unknown): string | undefined {
  * rejected or retired, it refreshes the list, chooses again and retries once.
  * `tools: true` asks for native tool calls. A text JSON action is used when the model or gateway does not.
  */
-export function createProvider(config: ProviderConfig, options: { catalog?: ModelCatalog; request?: Fetch; tools?: boolean } = {}): AgentProvider {
+export function createProvider(config: ProviderConfig, options: { catalog?: ModelCatalog; request?: Fetch; tools?: boolean; stream?: boolean } = {}): AgentProvider {
   const request = options.request ?? fetch;
   const pinned = config.model === 'auto' ? undefined : config.model;
   let jsonMode = config.kind === 'openai';
@@ -261,7 +251,8 @@ export function createProvider(config: ProviderConfig, options: { catalog?: Mode
     });
   };
 
-  return async messages => {
+  const totals = emptyUsage();
+  const provider: AgentProvider = async messages => {
     let model = await resolve();
     let retried = false;
     for (;;) {
@@ -303,4 +294,21 @@ export function createProvider(config: ProviderConfig, options: { catalog?: Mode
       throw new Error(`Model request failed (HTTP ${response.status}) for ${model}${detail ? `: ${detail}` : ''}`);
     }
   };
+  if (options.stream) {
+    provider.turn = async (messages, hooks) => {
+      const model = await resolve();
+      const turn = await completeTurn({
+        config: { kind: config.kind, baseUrl: config.baseUrl, apiKey: config.apiKey, model },
+        messages, tools, request,
+        ...(hooks ? { hooks } : {}),
+      });
+      totals.inputTokens += turn.usage.inputTokens;
+      totals.outputTokens += turn.usage.outputTokens;
+      totals.cachedTokens += turn.usage.cachedTokens;
+      totals.reasoningTokens += turn.usage.reasoningTokens;
+      return turn;
+    };
+  }
+  provider.usage = () => ({ ...totals, costUsd: costUsd(totals) });
+  return provider;
 }

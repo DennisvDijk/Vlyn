@@ -2,20 +2,35 @@ import { spawn } from 'node:child_process';
 import { lstat, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { findInjections } from './broker.ts';
+import { compactHistory, truncateToolResult } from './llm/context.ts';
+import type { ModelTurn, ModelUsage, TurnHooks } from './llm/types.ts';
 import type { CapabilityManifest } from './capabilities.ts';
 import { canRun, canWrite } from './capabilities.ts';
 import { redact, runGoverned, secretValues } from './sandbox.ts';
 import { isObject } from './workspace.ts';
 import { dependents, dependencies, normalizeProjectPath, parseImports, scanProject } from './graph.ts';
+import { extractJson } from './providers.ts';
 
-export type AgentMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-export type AgentProvider = (messages: AgentMessage[]) => Promise<string>;
+export type AgentMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  toolCallId?: string;
+  toolCalls?: { id: string; name: string; arguments: string }[];
+  reasoning?: { id?: string; text: string; signature?: string }[];
+  /** Responses API output items, replayed unchanged on the next request. */
+  outputItems?: unknown[];
+};
+export type AgentProvider = ((messages: AgentMessage[]) => Promise<string>) & {
+  /** Streaming turn used by coding runs. Planning providers do not set this. */
+  turn?: (messages: AgentMessage[], hooks?: TurnHooks) => Promise<ModelTurn>;
+  usage?: () => ModelUsage;
+};
 type CheckResult = { command: string; exitCode: number | null; output: string; stale: boolean };
 type TaskGraph = {
   nodes: { id: string; kind: 'task' | 'file' | 'check'; label: string }[];
   edges: { from: string; to: string; kind: 'read' | 'edited' | 'created' | 'ran' | 'imports'; sequence: number; line?: number }[];
 };
-export type CodingResult = { summary: string; files: string[]; checks: CheckResult[]; completed: boolean; graph: TaskGraph; denied: string[] };
+export type CodingResult = { summary: string; files: string[]; checks: CheckResult[]; completed: boolean; graph: TaskGraph; denied: string[]; usage?: ModelUsage };
 
 const instructions = `You are a coding agent. Work only inside the supplied project.
 If function tools are available, call one tool per turn. Otherwise return one JSON action: {"action":"list","path":"."}, {"action":"read","path":"file"},
@@ -92,6 +107,8 @@ export async function runCodingAgent(options: {
   audit?: (event: { action: string; target: string; decision: 'allow' | 'deny'; detail?: string }) => void;
   maxTurns?: number;
   onAction?: (description: string) => void;
+  signal?: AbortSignal;
+  onDelta?: (delta: string) => void;
 }): Promise<CodingResult> {
   const root = await realpath(options.root);
   const messages: AgentMessage[] = [
@@ -144,15 +161,10 @@ export async function runCodingAgent(options: {
   if (messages.length > (options.context !== undefined ? 3 : 2)) record('read', 'AGENTS.md');
   let summary = 'Turn limit reached before the agent finished.';
   let completed = false;
-  for (let turn = 0; turn < (options.maxTurns ?? 30); turn += 1) {
-    const response = await options.provider(messages);
-    let action: unknown;
-    try { action = JSON.parse(response); } catch { throw new Error('Model returned invalid JSON'); }
-    if (!isObject(action) || typeof action.action !== 'string') throw new Error('Model returned an invalid action');
-    messages.push({ role: 'assistant', content: response });
+  let usage: ModelUsage | undefined;
+  const apply = async (action: Record<string, unknown>): Promise<unknown> => {
     let result: unknown;
-    try {
-      switch (action.action) {
+    switch (action.action) {
         case 'graph':
           result = graph;
           break;
@@ -257,12 +269,47 @@ export async function runCodingAgent(options: {
           break;
         default:
           throw new Error('Unknown action');
-      }
-    } catch (error) {
-      result = { error: error instanceof Error ? error.message : String(error) };
     }
+    return result;
+  };
+  for (let turn = 0; turn < (options.maxTurns ?? 30); turn += 1) {
+    const history = compactHistory(messages);
+    const streamed = options.provider.turn ? await options.provider.turn(history, { ...(options.signal ? { signal: options.signal } : {}), ...(options.onDelta ? { onText: options.onDelta } : {}) }) : undefined;
+    if (streamed) usage = {
+      inputTokens: (usage?.inputTokens ?? 0) + streamed.usage.inputTokens,
+      outputTokens: (usage?.outputTokens ?? 0) + streamed.usage.outputTokens,
+      cachedTokens: (usage?.cachedTokens ?? 0) + streamed.usage.cachedTokens,
+      reasoningTokens: (usage?.reasoningTokens ?? 0) + streamed.usage.reasoningTokens,
+      costUsd: usage?.costUsd === null || streamed.usage.costUsd === null ? null : (usage?.costUsd ?? 0) + streamed.usage.costUsd,
+    };
+    const batch: { id?: string; action: Record<string, unknown> }[] = [];
+    if (streamed?.toolCalls.length) {
+      for (const call of streamed.toolCalls) batch.push({ id: call.id, action: { action: call.name, ...call.arguments } });
+      messages.push({
+        role: 'assistant', content: streamed.text,
+        toolCalls: streamed.toolCalls.map(call => ({ id: call.id, name: call.name, arguments: call.argumentsText })),
+        ...(streamed.reasoning.length ? { reasoning: streamed.reasoning } : {}),
+        ...(streamed.outputItems.length ? { outputItems: streamed.outputItems } : {}),
+      });
+    } else {
+      const response = streamed ? extractJson(streamed.text) : await options.provider(history);
+      let parsed: unknown;
+      try { parsed = JSON.parse(response); } catch { throw new Error('Model returned invalid JSON'); }
+      if (!isObject(parsed) || typeof parsed.action !== 'string') throw new Error('Model returned an invalid action');
+      batch.push({ action: parsed });
+      messages.push({ role: 'assistant', content: response });
+    }
+    const results = await Promise.all(batch.map(async item => {
+      try { return { ...item, result: await apply(item.action) }; }
+      catch (error) { return { ...item, result: { error: error instanceof Error ? error.message : String(error) } }; }
+    }));
     if (completed) break;
-    messages.push({ role: 'user', content: JSON.stringify({ tool_result: result }) });
+    if (streamed?.toolCalls.length) {
+      for (const item of results) messages.push({ role: 'tool', content: truncateToolResult(item.result), ...(item.id ? { toolCallId: item.id } : {}) });
+    } else {
+      const first = results[0];
+      messages.push({ role: 'user', content: truncateToolResult({ tool_result: first?.result }) });
+    }
   }
-  return { summary, files: [...files], checks, completed, graph, denied };
+  return { summary, files: [...files], checks, completed, graph, denied, ...(usage ? { usage } : {}) };
 }
