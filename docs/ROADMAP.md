@@ -13,7 +13,7 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 5 | Every model system, live model refresh from the user's key (LiteLLM etc.) | done (PR #3) | `providers.ts` |
 | 6 | Spec, file ownership, convergence of parallel results | done (PR #3) | merge on overlap; out-of-scope edits are `unverified`; `_integration` worktree |
 | 7 | Memory, step 1: recall earlier run outcomes before planning | done (PR #3) | `memory.ts`, read from the journal |
-| 8 | Memory, steps 2–5: typed memory with provenance, post-run reflection, validated procedures, agent context budget | next | Folded into phase 15. Do not start a second memory design |
+| 8 | Memory, steps 2–5: typed memory with provenance, post-run reflection, validated procedures, agent context budget | done (PR #6) | Folded into phase 15. Do not start a second memory design |
 | 9 | Run against a live model; fix what scripted tests hid | next | Still the largest unknown. Phase 14 is scripted on purpose and does not close this |
 | 10 | `vlyn converge` command and applying a combined result to a branch | done (PR #8) | Folded into phase 17. `vlyn converge` and `vlyn apply` exist. Apply does not check out the branch |
 | 11 | Cross-repository and deployed-service reasoning (repos, Terraform, YAML, Kubernetes as nodes and edges) | later | Vlyn's main differentiator; not built |
