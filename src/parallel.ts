@@ -78,10 +78,11 @@ export async function executeTask(task: CodingTask, worktree: string, provider: 
 }): Promise<TaskResult> {
   let result: CodingResult | undefined;
   let error: string | undefined;
-  const manifest = task.check || task.files?.length ? manifestFor(worktree, task) : undefined;
+  const rooted = await realpath(worktree);
+  const manifest = task.check || task.files?.length ? manifestFor(rooted, task) : undefined;
   try {
     result = await runCodingAgent({
-      root: worktree, task: task.task, provider, actorId: task.id,
+      root: rooted, task: task.task, provider, actorId: task.id,
       ...(task.check ? { check: task.check } : {}),
       ...(context !== undefined ? { context } : {}),
       ...(manifest ? { manifest } : {}),

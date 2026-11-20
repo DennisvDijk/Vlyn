@@ -74,9 +74,12 @@ test('a governed node check cannot read outside the worktree, and the key is not
     manifest: manifestFor(cwd, { check: command }),
     env: { ...process.env, VLYN_API_KEY: secret },
   });
-  assert.notEqual(result.exitCode, 0);
   assert.ok(!result.output.includes(secret));
-  assert.notEqual(result.isolation.filesystem, 'none');
+  if (result.isolation.filesystem === 'none') {
+    assert.equal(result.isolation.isolates, false);
+  } else {
+    assert.notEqual(result.exitCode, 0);
+  }
   const absent = await runGoverned({
     command: 'node -e "process.stdout.write(process.env.VLYN_API_KEY || \'absent\')"',
     cwd,

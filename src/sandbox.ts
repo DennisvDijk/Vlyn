@@ -34,6 +34,7 @@ const maxOutput = 30_000;
 let cachedUnshare: boolean | undefined;
 let cachedBwrap: boolean | undefined;
 let cachedSeatbelt: boolean | undefined;
+let cachedNodePermission: boolean | undefined;
 
 function probe(file: string, args: string[]): boolean {
   try {
@@ -63,7 +64,13 @@ export function bubblewrapAvailable(): boolean {
 
 export function seatbeltAvailable(): boolean {
   if (process.platform !== 'darwin') return false;
-  cachedSeatbelt ??= probe('sandbox-exec', ['-n', 'no-network', 'true']);
+  if (cachedSeatbelt !== undefined) return cachedSeatbelt;
+  // A named profile that can run `true` is not proof our profile can run Node.
+  // GitHub's macOS image aborted Node with SIGABRT under a too-tight profile.
+  const child = spawnSync('sandbox-exec', ['-p', seatbeltProfile(process.cwd()), '--', process.execPath, '-e', 'process.exit(0)'], {
+    stdio: 'ignore', timeout: 5_000,
+  });
+  cachedSeatbelt = child.status === 0;
   return cachedSeatbelt;
 }
 
@@ -131,9 +138,9 @@ export type Launch = {
 /** Choose the strongest confinement that is actually present. */
 export function planLaunch(command: string, cwd: string, manifest: CapabilityManifest): Launch {
   const tokens = splitCommand(command);
-  const nodeCmd = tokens[0] === 'node' || tokens[0] === 'node.exe';
+  const nodeCmd = (tokens[0] === 'node' || tokens[0] === 'node.exe') && nodePermissionAvailable();
   const permission = ['--permission', `--allow-fs-read=${cwd}`, `--allow-fs-write=${cwd}`];
-  const nodeInner = nodeCmd ? [process.execPath, ...permission, ...tokens.slice(1)] : tokens;
+  const nodeInner = nodeCmd ? [process.execPath, ...permission, ...tokens.slice(1)] : tokens[0] === 'node' || tokens[0] === 'node.exe' ? [process.execPath, ...tokens.slice(1)] : tokens;
   if (process.platform === 'linux' && bubblewrapAvailable()) {
     return {
       file: 'bwrap', args: bubblewrapArgs(cwd, nodeInner), shell: false,
@@ -166,6 +173,16 @@ export function planLaunch(command: string, cwd: string, manifest: CapabilityMan
     file: command, args: [], shell: true,
     isolation: { driver: 'gate-only', filesystem: 'none', network: 'none', landlock: false, seccomp: false, isolates: false },
   };
+}
+
+/** Node 26 on Windows has been seen to reject a trivial script under --permission. Do not wrap checks then. */
+export function nodePermissionAvailable(): boolean {
+  if (cachedNodePermission !== undefined) return cachedNodePermission;
+  const child = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${process.cwd()}`, '-e', 'process.exit(0)'], {
+    stdio: 'ignore', timeout: 5_000,
+  });
+  cachedNodePermission = child.status === 0;
+  return cachedNodePermission;
 }
 
 export function posture(): Isolation {

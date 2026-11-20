@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 /** What one coding task is allowed to do. Network for the child is none unless explicitly unrestricted. */
 export type CapabilityManifest = {
@@ -27,10 +27,17 @@ export function manifestFor(root: string, task: { files?: string[]; check?: stri
   };
 }
 
+/** Compare paths with one slash style so Windows grants and git paths still match. */
+function canonical(path: string): string {
+  return path.replace(/[\\/]+/gu, '/');
+}
+
 function covers(allowed: string, candidate: string): boolean {
-  if (candidate === allowed) return true;
-  const prefix = allowed.endsWith(sep) ? allowed : allowed + sep;
-  return candidate.startsWith(prefix);
+  const left = canonical(allowed);
+  const right = canonical(candidate);
+  if (right === left) return true;
+  const prefix = left.endsWith('/') ? left : `${left}/`;
+  return right.startsWith(prefix);
 }
 
 export function canRead(manifest: CapabilityManifest, root: string, path: string): boolean {
@@ -40,8 +47,8 @@ export function canRead(manifest: CapabilityManifest, root: string, path: string
 
 export function canWrite(manifest: CapabilityManifest, root: string, path: string): boolean {
   const abs = resolve(root, path);
-  const rel = relative(root, abs);
-  if (manifest.grants.includes(rel)) return true;
+  const rel = canonical(relative(root, abs));
+  if (manifest.grants.some(item => canonical(item) === rel)) return true;
   return manifest.write.some(allowed => covers(allowed, abs));
 }
 
