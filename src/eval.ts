@@ -169,12 +169,13 @@ export async function runEval(): Promise<EvalReport> {
         const result = await executeTask({ ...spec.task, id: spec.id }, work, script.provider);
         const outcome: 0 | 1 = result.status === 'completed' ? 1 : 0;
         decisions.score(forecast.id, outcome);
+        const lastCheck = result.result?.checks.at(-1);
         const honest = result.status === judgeTask({
-          error: result.error,
           completed: Boolean(result.result?.completed),
           checkRequired: Boolean(spec.task.check),
-          lastCheck: result.result?.checks.at(-1),
           outOfScope: result.outOfScope ?? [],
+          ...(result.error !== undefined ? { error: result.error } : {}),
+          ...(lastCheck ? { lastCheck } : {}),
         });
         reports.push({
           id: spec.id,

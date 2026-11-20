@@ -14,6 +14,7 @@ Flags common to several commands: `--json`, `--home PATH` (journal directory, el
 | `vlyn runs` | List journaled runs. Ids are printed as eight characters. `--json` includes the full id and the worktree directory. |
 | `vlyn actors` | List journaled actors: id, role, state, version. Empty journal prints `No actors yet.` |
 | `vlyn lessons [dir] [--apply]` | Print lesson claims. `--apply` rewrites only the `<!-- vlyn-lessons:start/end -->` block of `AGENTS.md`. |
+| `vlyn eval` | Scripted suite. Exit 0 when pass rate and honesty rate are both 1. No model and no journal. |
 
 `auto` and `resume` exit 0 only when the run is finished and every task is `completed`.
 
@@ -56,6 +57,7 @@ Task file: an array of 1 to 32 objects. Fields are `id`, `task`, and optional `c
 | `src/cli.ts` | Command entry. Run directly by Node. |
 | `src/actors.ts`, `src/actor-coding.ts` | Actor pool, brain snapshots, hypothesis race |
 | `src/lessons.ts` | Lesson claims, decay, and the AGENTS.md suggestion |
+| `src/decision.ts`, `src/eval.ts` | Decision journal and the scripted eval |
 | `src/planner.ts` | Goal to spec and owned tasks |
 | `src/coding-agent.ts` | Tool loop and per-task graph |
 | `src/providers.ts` | OpenAI-compatible and Anthropic HTTP |
