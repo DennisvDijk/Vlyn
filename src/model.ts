@@ -1,5 +1,6 @@
 import { isObject } from './workspace.ts';
 import type { Check, Observation } from './workspace.ts';
+import type { AgentProvider } from './coding-agent.ts';
 
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 type Ask = (messages: Message[]) => Promise<string>;
@@ -55,7 +56,7 @@ export async function planOrder(observation: Observation, checks: Check[], ask: 
   return { checks: ordered, actions };
 }
 
-export function openAIPlanner(model: string, apiKey: string, request: typeof fetch = fetch): Ask {
+export function openAIPlanner(model: string, apiKey: string, request: typeof fetch = fetch): AgentProvider {
   return async messages => {
     const response = await request('https://api.openai.com/v1/chat/completions', {
       method: 'POST',

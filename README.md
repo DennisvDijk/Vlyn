@@ -2,7 +2,17 @@
 
 This private repository is the home of the complete standalone coding harness. The intended harness will support coding tasks through its own model loop, context handling, tool execution, and task-driven parallel workers.
 
-The first implemented capability is **Contract Rehearsal**. It checks a proposed JSON response against consumer versions recorded in a deployment snapshot. The current model integration can prioritize those checks. The general coding loop, editing tools, live discovery, and broader agent orchestration remain to be built.
+The harness includes a coding loop for inspecting and editing a local project and a **Contract Rehearsal** capability for checking proposed JSON responses against consumer versions recorded in a deployment snapshot. Live infrastructure discovery and broader agent orchestration are future work.
+
+## Coding tasks
+
+Set `OPENAI_API_KEY` and choose a model that supports Chat Completions JSON mode. The task below lets the agent inspect and edit the current project, and run the supplied verification command.
+
+```sh
+node src/cli.ts code . --model YOUR_MODEL --task "Fix the failing test" --check "npm test"
+```
+
+The agent loads a root `AGENTS.md` when present, lists and reads files, creates files, and applies exact text replacements. It runs only the check supplied in `--check`. Changes are written to the project as the agent works. A task graph tracks observed file reads, edits, creations, checks, and resolved relative JavaScript or TypeScript imports from files the agent reads or changes. Import edges carry line numbers and update when the source is edited. The graph is available to the agent and in the final `--json` result. This initial discovery handles single-line static imports and exports, and gives a partial view of the project. Repository content, including files the agent reads, is sent to the configured model provider. The agent has a bounded number of turns and reports the changed files and check results. A check becomes stale when the agent edits a file afterward. When `--check` is supplied, the command exits successfully only if the last check passed and is current.
 
 ## Try it
 
