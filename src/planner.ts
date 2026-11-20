@@ -1,3 +1,4 @@
+import type { Memory } from './memory.ts';
 import { execFile } from 'node:child_process';
 import { readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -77,6 +78,8 @@ export async function planTasks(options: {
   provider: AgentProvider;
   check?: string;
   maxTasks?: number;
+  /** What earlier runs in this repository learned; included in the planner's context. */
+  memory?: Memory[];
 }): Promise<Plan> {
   const root = await realpath(options.root);
   const graph = await scanProject(root);
@@ -91,6 +94,7 @@ export async function planTasks(options: {
     import_cycles: findCycles(graph).slice(0, 5),
     verification: options.check,
     project_instructions: instructions || undefined,
+    earlier_runs: options.memory?.length ? options.memory.map(item => ({ task: item.task, status: item.status, files: item.files, note: item.note, goal: item.goal })) : undefined,
   };
   const reply = await options.provider([{ role: 'system', content: prompt }, { role: 'user', content: JSON.stringify(context) }]);
   let value: unknown;

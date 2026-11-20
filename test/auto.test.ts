@@ -184,3 +184,23 @@ test('CLI lists runs from the journal and explains what auto and resume need', a
   assert.match(run('auto', '.').stderr, /requires --goal/u);
   assert.match(run('resume').stderr, /No matching unfinished run/u);
 });
+
+test('planning recalls relevant earlier outcomes from the journal, failures first, within a budget', async context => {
+  const root = await gitRepo(context, files);
+  const { journal } = await openJournal(context);
+  const earlier = await journal.create({ root, goal: 'Rename alpha in the text files', workers: 1, tasks: [
+    { id: 'alpha', task: 'Change alpha', check: pass, files: ['a.txt'] }, { id: 'util', task: 'Tidy util', check: pass, files: ['src/util.ts'] },
+  ] });
+  const [alpha, util] = journal.tasks(earlier.id);
+  journal.setTask(earlier.id, 'alpha', 'unverified', { task: alpha.task, worktree: alpha.worktree, status: 'unverified', changedFiles: ['a.txt', 'b.txt'], outOfScope: ['b.txt'], diff: '' });
+  journal.setTask(earlier.id, 'util', 'completed', { task: util.task, worktree: util.worktree, status: 'completed', changedFiles: ['src/util.ts'], diff: '' });
+  const { recall } = await import('../src/memory.ts');
+  const memories = recall(journal, root, 'Rename alpha again', { files: ['a.txt'] });
+  assert.equal(memories[0].task, 'alpha');
+  assert.match(memories[0].note, /outside its files: b\.txt/u);
+  assert.equal(recall(journal, root, 'Rename alpha again', { limit: 1 }).length, 1);
+  assert.deepEqual(recall(journal, root, 'unrelated zebra'), []);
+  let sent = '';
+  await planTasks({ root, goal: 'Rename alpha again', memory: memories, provider: async messages => { sent = messages[1].content; return JSON.stringify({ tasks: [{ id: 'a', task: 'a', files: ['a.txt'] }] }); } });
+  assert.match(sent, /earlier_runs/u);
+});

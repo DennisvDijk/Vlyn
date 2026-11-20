@@ -84,6 +84,10 @@ The planner writes a short spec before any code is touched, and each task declar
 - A task that changes files it does not own is `unverified`, even if its check passed.
 - **Convergence**: after a run, Vlyn applies every completed task's diff in a separate `_integration` worktree, reports conflicts, and runs the distinct check commands on the combined result. Your checkout is never changed. The result is stored in the journal.
 
+## Memory
+
+Before planning, Vlyn recalls what earlier runs in the same repository learned: which tasks failed, which edited files outside their ownership, which combined results did not integrate. It reads this straight from the journal, so nothing is copied and nothing goes stale, and each item names its run. Recall is ranked by shared goal words and files (failures first) and capped at five items and about 2 KB, so it informs the planner without flooding it. Planned next: turning recurring lessons into reviewed `AGENTS.md` suggestions and validated reusable procedures.
+
 ## Interactive session
 
 | Prompt | Commands |
@@ -132,6 +136,7 @@ vlyn status examples/payments --json
 | --- | --- |
 | `src/coding-agent.ts` | Model loop with scoped tools and a per-task graph |
 | `src/providers.ts` | Any OpenAI-compatible or Anthropic endpoint, live model catalog and refresh |
+| `src/memory.ts` | Recall of earlier outcomes from the journal, ranked and size-capped |
 | `src/planner.ts` | Goal → spec and validated, independent tasks with file ownership |
 | `src/durable.ts` | SQLite journal, run creation, recovery, resumable executor, convergence |
 | `src/parallel.ts` | One task in one worktree; the batch runner |

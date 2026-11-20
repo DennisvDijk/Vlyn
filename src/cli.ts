@@ -13,6 +13,7 @@ import type { Check } from './workspace.ts';
 import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
 import { Journal, defaultHome, executeRun } from './durable.ts';
+import { recall } from './memory.ts';
 import { planTasks } from './planner.ts';
 import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
@@ -133,7 +134,7 @@ async function main(): Promise<number> {
         if (!values.goal?.trim()) throw new Error('auto requires --goal');
         needModel('auto');
         const root = await realpath(positionals[1] ?? '.');
-        const plan = await planTasks({ root, goal: values.goal, provider: needModel('auto'), check: values.check });
+        const plan = await planTasks({ root, goal: values.goal, provider: needModel('auto'), check: values.check, memory: recall(journal, root, values.goal) });
         if (values['plan-only']) {
           console.log(values.json ? JSON.stringify(plan, null, 2) : [...plan.tasks.map(task => `${task.id}: ${display(task.task)}`), ...plan.warnings.map(warning => `! ${warning}`)].join('\n'));
           return 0;
