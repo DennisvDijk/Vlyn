@@ -62,6 +62,10 @@ flowchart LR
 | Check a JSON change against contracts | `vlyn run examples/payments` | [Contract rehearsal](docs/how-to/contract-rehearsal.md) |
 | See why the environment is unhappy | `vlyn doctor` | [Troubleshoot](docs/how-to/troubleshoot-with-doctor.md) |
 
+## Research stance
+
+Vlyn is a coding tool. [docs/research/state-of-the-art.md](docs/research/state-of-the-art.md) uses findings on memory, judgment, accidents, and confinement as **analogies** for how a plan is made, how a check is trusted, and how a crash is resumed. It does not claim that Vlyn is a brain, or that a sandbox is present when this OS cannot provide one. The shared phase list is [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Limitations
 
 These are limits of the code on this branch, not a roadmap in disguise.
