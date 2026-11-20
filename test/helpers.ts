@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { TestContext } from 'node:test';
+import { Journal } from '../src/durable.ts';
 
 export async function tempDir(context: TestContext, prefix = 'vlyn-'): Promise<string> {
   const directory = await realpath(await mkdtemp(join(tmpdir(), prefix)));
@@ -35,4 +36,15 @@ export function scripted(actions: Record<string, unknown[]>) {
     let index = 0;
     return async () => JSON.stringify(actions[task.id][index++]);
   };
+}
+
+/** A journal in a temporary home. It is closed before the folder is removed, which Windows requires. */
+export async function openJournal(context: TestContext): Promise<{ journal: Journal; home: string }> {
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'vlyn-home-')));
+  const journal = new Journal(home);
+  context.after(async () => {
+    try { journal.close(); } catch { /* already closed */ }
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  return { journal, home };
 }

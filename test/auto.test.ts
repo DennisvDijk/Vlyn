@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import { Journal, executeRun } from '../src/durable.ts';
 import { planTasks } from '../src/planner.ts';
 import { board, runTui } from '../src/tui.ts';
-import { gitRepo, scripted, tempDir } from './helpers.ts';
+import { fileURLToPath } from 'node:url';
+import { gitRepo, openJournal, scripted, tempDir } from './helpers.ts';
 
 const files = { 'a.txt': 'alpha', 'b.txt': 'beta', 'src/app.ts': "import './util.ts';\n", 'src/util.ts': 'export {};\n' };
 const pass = 'node -e "process.exit(0)"';
@@ -39,9 +40,7 @@ test('a plain-language goal becomes validated tasks with the check applied and o
 
 test('a run survives a crash: finished work is kept and the interrupted task restarts from the base revision', async context => {
   const root = await gitRepo(context, files);
-  const home = await tempDir(context);
-  const journal = new Journal(home);
-  context.after(() => journal.close());
+  const { journal, home } = await openJournal(context);
   const run = await journal.create({ root, goal: 'Edit both files', workers: 2, tasks: [
     { id: 'alpha', task: 'Change alpha', check: pass }, { id: 'beta', task: 'Change beta', check: pass },
   ] });
@@ -75,8 +74,7 @@ test('a run survives a crash: finished work is kept and the interrupted task res
 
 test('another live process owning a run blocks a second executor, and an abort leaves unclaimed tasks pending', async context => {
   const root = await gitRepo(context, files);
-  const journal = new Journal(await tempDir(context));
-  context.after(() => journal.close());
+  const { journal } = await openJournal(context);
   const run = await journal.create({ root, goal: 'g', workers: 1, tasks: [{ id: 'one', task: 'one', check: pass }, { id: 'two', task: 'two', check: pass }] });
   journal.setRun(run.id, 'running', process.ppid);
   await assert.rejects(executeRun(journal, run.id, { provider: () => async () => '' }), /already being executed/u);
@@ -92,8 +90,7 @@ test('another live process owning a run blocks a second executor, and an abort l
 
 test('the interactive TUI plans from a goal, lets the person edit the plan, runs it and shows diffs', async context => {
   const root = await gitRepo(context, files);
-  const journal = new Journal(await tempDir(context));
-  context.after(() => journal.close());
+  const { journal } = await openJournal(context);
   const input = new PassThrough();
   const output = new PassThrough();
   let text = '';
@@ -148,7 +145,7 @@ test('CLI lists runs from the journal and explains what auto and resume need', a
   const { spawnSync } = await import('node:child_process');
   const home = await tempDir(context);
   const env = { ...process.env, VLYN_HOME: home, OPENAI_API_KEY: '', ANTHROPIC_API_KEY: '', LITELLM_API_KEY: '', VLYN_API_KEY: '', VLYN_BASE_URL: '', OPENAI_BASE_URL: '', LITELLM_BASE_URL: '', VLYN_MODEL: '' };
-  const cli = new URL('../src/cli.ts', import.meta.url).pathname;
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
   const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
   assert.match(run('runs').stdout, /No runs yet/u);
   assert.match(run('auto', '.', '--goal', 'Do it').stderr, /needs a model/u);
