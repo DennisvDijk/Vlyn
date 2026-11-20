@@ -134,6 +134,32 @@ test('the Anthropic provider sends a system prompt and alternating roles', async
   assert.deepEqual((body.messages as { role: string }[]).map(message => message.role), ['user', 'assistant', 'user']);
 });
 
+test('native tool calls become the same JSON action, and a gateway that rejects tools falls back', async () => {
+  const openai = fakeFetch(call => call.body?.tools
+    ? json({ choices: [{ message: { tool_calls: [{ function: { name: 'read', arguments: '{"path":"src/a.ts"}' } }] } }] })
+    : chat('{"action":"finish","summary":"no tools"}'));
+  const provider = createProvider({ ...gateway, model: 'gpt-5.2' }, { request: openai.request, tools: true });
+  assert.equal(await provider([{ role: 'user', content: 'go' }]), '{"action":"read","path":"src/a.ts"}');
+  const sent = openai.calls[0]?.body;
+  if (!sent || !Array.isArray(sent.tools)) throw new Error('expected native tools');
+  assert.equal(sent.response_format, undefined, 'JSON mode stays off while tools are accepted');
+  assert.ok((sent.tools as { function: { name: string } }[]).some(tool => tool.function.name === 'finish'));
+
+  const rejected = fakeFetch(call => call.body?.tools
+    ? json({ error: { message: 'tools are not supported' } }, 400)
+    : chat('{"action":"list","path":"."}'));
+  const fallback = createProvider({ ...gateway, model: 'local' }, { request: rejected.request, tools: true });
+  assert.equal(await fallback([{ role: 'user', content: 'go' }]), '{"action":"list","path":"."}');
+  assert.equal(rejected.calls.length, 2);
+
+  const anthropic = fakeFetch(() => json({ content: [{ type: 'tool_use', name: 'finish', input: { summary: 'done' } }, { type: 'text', text: 'ignored' }] }));
+  const claude = createProvider({ kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', apiKey: 'a', keyName: 'ANTHROPIC_API_KEY', model: 'claude' }, { request: anthropic.request, tools: true });
+  assert.equal(await claude([{ role: 'user', content: 'go' }]), '{"action":"finish","summary":"done"}');
+  const body = anthropic.calls[0]?.body;
+  if (!body || !Array.isArray(body.tools)) throw new Error('expected Anthropic tools');
+  assert.ok((body.tools as { name: string }[]).some(tool => tool.name === 'check'));
+});
+
 test('extractJson tolerates fences and prose but leaves valid JSON alone', () => {
   assert.equal(extractJson('{"a":1}'), '{"a":1}');
   assert.equal(extractJson('Here you go:\n```\n{"a":2}\n```'), '{"a":2}');
