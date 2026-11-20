@@ -15,14 +15,14 @@ Status: **done** (merged), **in PR** (open, not merged), **next**, **later**. "V
 | 7 | Memory, step 1: recall earlier run outcomes before planning | done (PR #3) | `memory.ts`, read from the journal |
 | 8 | Memory, steps 2–5: typed memory with provenance, post-run reflection, validated procedures, agent context budget | next | Folded into phase 15. Do not start a second memory design |
 | 9 | Run against a live model; fix what scripted tests hid | next | Still the largest unknown. Phase 14 is scripted on purpose and does not close this |
-| 10 | `vlyn converge` command and applying a combined result to a branch | next | Folded into phase 17. Convergence today only runs at the end of a run |
+| 10 | `vlyn converge` command and applying a combined result to a branch | done (PR #8) | Folded into phase 17. `vlyn converge` and `vlyn apply` exist. Apply does not check out the branch |
 | 11 | Cross-repository and deployed-service reasoning (repos, Terraform, YAML, Kubernetes as nodes and edges) | later | Vlyn's main differentiator; not built |
 | 12 | Native tool calling per vendor; Gemini and Bedrock without a gateway | later | |
 | 13 | GitLab CI alongside GitHub Actions | later | Requested for the wider project 2026-11-17 |
 | 14 | Decision journal and `vlyn eval`: confidence recorded before the verdict, Brier score, honesty rate | done (PR #7) | `src/decision.ts`, `src/eval.ts`. Scripted suite only. Does not close phase 9 |
 | 15 | Lesson store: consolidation, decay, reconsolidation, claim status, reviewed `AGENTS.md` suggestion | done (PR #6) | `src/lessons.ts`. Folds phase 8. `vlyn lessons` prints a suggestion. `--apply` writes only the marked section of AGENTS.md |
 | 16 | Actor brain snapshots in the journal: pool, resume, revert, fork, one-for-one supervisor, role templates | done (PR #5) | `src/actors.ts`, `src/actor-coding.ts`, ADR 0001. `vlyn actors` lists rows. A goal run does not create them. No Substrate dependency. Git worktrees still hold the files |
-| 17 | Pre-mortem gate, after-action note, `vlyn converge`, apply onto a named new branch | in PR #8 | Folds phase 10. Outcome: ambiguous plans do not edit; apply never checks out the user's branch |
+| 17 | Pre-mortem gate, after-action note, `vlyn converge`, apply onto a named new branch | done (PR #8) | `src/premortem.ts`, `applyToBranch`. A risk at 0.7 blocks edits unless `--proceed` or `force` |
 | 18 | Capability sandbox and parent broker | in PR #9 | Keys stay in the parent. Doctor must say if the network is really confined. No Landlock/seccomp claim, no Docker |
 | 19 | Toolchain: TypeScript 7 strict flags, Biome, split CI, supply-chain workflows | done (PR #10) | Node 24 and 26 on three OS. `isolatedDeclarations` off while the package is private and `noEmit`. No npm publish. CodeQL and dependency review run only for a public repo or when `ENABLE_CODEQL` / `ENABLE_DEPENDENCY_REVIEW` is set. Private CI uses `npm audit` on the lockfile |
 

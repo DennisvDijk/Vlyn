@@ -13,15 +13,16 @@ import type { Check } from './workspace.ts';
 import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
 import { ActorRuntime } from './actors.ts';
-import { Journal, defaultHome, executeRun } from './durable.ts';
+import { Journal, applyToBranch, converge, defaultHome, executeRun } from './durable.ts';
 import { runEval } from './eval.ts';
 import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
+import { planGate, preMortem } from './premortem.ts';
 import { planTasks } from './planner.ts';
 import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   tui          Interactive session: state a goal, review the generated plan, watch agents work
   auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
@@ -30,6 +31,8 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|models|code
   actors       List journaled actors (planner, coder, reviewer, verifier, supervisor)
   lessons      Distill repeated failures into claims. --apply writes the marked section of AGENTS.md
   eval         Score a scripted local suite: pass rate, verdict honesty, Brier score. No network
+  converge     Rebuild the integration worktree for a finished run and re-run its checks
+  apply        Commit that integration onto a new branch (--branch NAME). Does not check out the branch
   models       List the models your key can use; refreshed from the endpoint
   code         Work on a coding task in a project
   batch        Run independent coding tasks in isolated Git worktrees
@@ -47,6 +50,8 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|models|code
   --refresh    With models: fetch the model list now
   --goal TEXT  Plain-language goal for auto; tasks are generated for you
   --plan-only  With auto: print the generated tasks and stop
+  --proceed    With auto: edit even if the pre-mortem confidence is high
+  --branch N   With apply: name of the new branch
   --home PATH  Journal folder (default: ~/.vlyn or VLYN_HOME)
   --task TEXT  Coding task for code
   --check CMD  Verification command for code
@@ -92,7 +97,7 @@ async function main(): Promise<number> {
     options: {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
-      tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
+      tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, apply: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
@@ -128,6 +133,22 @@ async function main(): Promise<number> {
       const lessons = new LessonStore(journal).consolidate(root);
       if (values.apply) await applySuggestion(root, lessons);
       console.log(suggestion(lessons));
+      return 0;
+    } finally { journal.close(); }
+  }
+  if (positionals[0] === 'converge' || positionals[0] === 'apply') {
+    const journal = new Journal(values.home);
+    try {
+      const found = positionals[1] ? journal.run(positionals[1]) : journal.runs()[0];
+      if (!found) throw new Error('No matching run.');
+      if (positionals[0] === 'converge') {
+        const result = await converge(journal, found.id);
+        console.log(values.json ? JSON.stringify(result, null, 2) : `integration ${result.passed ? 'passed' : 'failed'} · ${result.applied.length} applied · ${result.conflicts.length} conflicts`);
+        return result.passed ? 0 : 1;
+      }
+      if (!values.branch) throw new Error('apply requires --branch NAME');
+      const applied = await applyToBranch(journal, found.id, values.branch);
+      console.log(`${applied.branch} ${applied.commit.slice(0, 8)}`);
       return 0;
     } finally { journal.close(); }
   }
@@ -181,6 +202,13 @@ async function main(): Promise<number> {
         if (values['plan-only']) {
           console.log(values.json ? JSON.stringify(plan, null, 2) : [...plan.tasks.map(task => `${task.id}: ${display(task.task)}`), ...plan.warnings.map(warning => `! ${warning}`)].join('\n'));
           return 0;
+        }
+        const risks = await preMortem({ tasks: plan.tasks }, needModel('auto'));
+        const gate = planGate(risks, { proceed: values.proceed });
+        if (!gate.edit) {
+          console.error(gate.reason);
+          console.error('No files were edited. Pass --proceed to continue.');
+          return 1;
         }
         const workers = Number(values.workers ?? '3');
         runId = (await journal.create({ root, goal: values.goal, tasks: plan.tasks, workers })).id;
