@@ -59,7 +59,11 @@ export async function executeTask(task: CodingTask, worktree: string, provider: 
   let result: CodingResult | undefined;
   let error: string | undefined;
   try {
-    result = await runCodingAgent({ root: worktree, task: task.task, provider, check: task.check, context });
+    result = await runCodingAgent({
+      root: worktree, task: task.task, provider,
+      ...(task.check ? { check: task.check } : {}),
+      ...(context !== undefined ? { context } : {}),
+    });
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause);
   }
@@ -71,7 +75,7 @@ export async function executeTask(task: CodingTask, worktree: string, provider: 
   const outOfScope = task.files?.length ? changedFiles.filter(file => !owns(task.files as string[], file)) : [];
   const status = error || !result?.completed ? 'failed' :
     !task.check || !lastCheck || lastCheck.stale || outOfScope.length ? 'unverified' : lastCheck.exitCode === 0 ? 'completed' : 'failed';
-  return { task, worktree, status, result, error, changedFiles, ...(outOfScope.length ? { outOfScope } : {}), diff };
+  return { task, worktree, status, changedFiles, diff, ...(result ? { result } : {}), ...(error ? { error } : {}), ...(outOfScope.length ? { outOfScope } : {}) };
 }
 
 export async function runParallel(options: {
@@ -108,12 +112,14 @@ export async function runParallel(options: {
     for (;;) {
       const index = next++;
       if (index >= pending.length) return;
-      const { task, worktree } = pending[index];
+      const item = pending[index];
+      if (!item) return;
+      const { task, worktree } = item;
       options.onProgress?.(`Started ${task.id}`);
       const output = await executeTask(task, worktree, options.provider(task));
       results[index] = output;
       await writeFile(join(directory, `${task.id}.json`), JSON.stringify(output, null, 2));
-      options.onProgress?.(`${task.id}: ${status}`);
+      options.onProgress?.(`${task.id}: ${output.status}`);
     }
   }
   const settled = await Promise.allSettled(Array.from({ length: Math.min(options.workers, pending.length) }, () => worker()));

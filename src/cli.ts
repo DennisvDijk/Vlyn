@@ -94,9 +94,12 @@ async function main(): Promise<number> {
     console.log(usage);
     return 0;
   }
-  const config = resolveConfig(process.env, { model: values.model, baseUrl: values['base-url'] });
+  const config = resolveConfig(process.env, {
+    ...(values.model !== undefined ? { model: values.model } : {}),
+    ...(values['base-url'] !== undefined ? { baseUrl: values['base-url'] } : {}),
+  });
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
-  const provider = config ? createProvider(config, { catalog }) : undefined;
+  const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
   if (positionals[0] === 'models') {
     if (!config || !catalog) throw new Error(`models needs an endpoint and key. ${describeSetup()}`);
@@ -114,7 +117,14 @@ async function main(): Promise<number> {
     const root = await realpath(positionals[1] ?? '.');
     const journal = new Journal(values.home);
     try {
-      return await runTui({ input: process.stdin, output: process.stdout, journal, root, provider, workers: Number(values.workers ?? '3'), catalog, refreshSeconds: Number(process.env.VLYN_MODEL_REFRESH_SECONDS ?? '600'), defaultCheck: values.check ?? await guessCheck(root) });
+      const defaultCheck = values.check ?? await guessCheck(root);
+      return await runTui({
+        input: process.stdin, output: process.stdout, journal, root, workers: Number(values.workers ?? '3'),
+        refreshSeconds: Number(process.env.VLYN_MODEL_REFRESH_SECONDS ?? '600'),
+        ...(provider ? { provider } : {}),
+        ...(catalog ? { catalog } : {}),
+        ...(defaultCheck ? { defaultCheck } : {}),
+      });
     } finally { journal.close(); }
   }
   if (positionals[0] === 'runs' || positionals[0] === 'resume' || positionals[0] === 'auto') {
@@ -134,7 +144,10 @@ async function main(): Promise<number> {
         if (!values.goal?.trim()) throw new Error('auto requires --goal');
         needModel('auto');
         const root = await realpath(positionals[1] ?? '.');
-        const plan = await planTasks({ root, goal: values.goal, provider: needModel('auto'), check: values.check, memory: recall(journal, root, values.goal) });
+        const plan = await planTasks({
+          root, goal: values.goal, provider: needModel('auto'), memory: recall(journal, root, values.goal),
+          ...(values.check ? { check: values.check } : {}),
+        });
         if (values['plan-only']) {
           console.log(values.json ? JSON.stringify(plan, null, 2) : [...plan.tasks.map(task => `${task.id}: ${display(task.task)}`), ...plan.warnings.map(warning => `! ${warning}`)].join('\n'));
           return 0;
@@ -146,12 +159,17 @@ async function main(): Promise<number> {
       const runner = needModel('Running tasks');
       const controller = new AbortController();
       process.once('SIGINT', () => { controller.abort(); console.error('Finishing running tasks, then stopping. Resume later with: vlyn resume ' + runId.slice(0, 8)); });
-      const { run, tasks } = await executeRun(journal, runId, { provider: () => runner, signal: controller.signal, onEvent: values.json ? undefined : event => console.error(display(event.message)) });
+      const { run, tasks } = await executeRun(journal, runId, {
+        provider: () => runner, signal: controller.signal,
+        ...(values.json ? {} : { onEvent: (event: { message: string }) => console.error(display(event.message)) }),
+      });
       console.log(values.json ? JSON.stringify({ run, tasks }, null, 2) : board(run, tasks).join('\n'));
       return run.status === 'finished' && tasks.every(task => task.status === 'completed') ? 0 : 1;
     } finally { journal.close(); }
   }
-  const [command, directory = '.'] = positionals;
+  const command = positionals[0];
+  if (!command) throw new Error('Use plan, run, or status with one workspace');
+  const directory = positionals[1] ?? '.';
   if (command === 'graph' || command === 'impact' || command === 'doctor') {
     if (positionals.length > 2) throw new Error(`${command} takes one directory`);
     const format = (values.json ? 'json' : values.format ?? 'text') as GraphFormat;
@@ -170,7 +188,7 @@ async function main(): Promise<number> {
     const tasks = await readTasks(resolve(values.tasks));
     const report = await runParallel({
       root: directory, tasks, workers, provider: () => batchModel,
-      onProgress: values.json ? undefined : message => console.error(display(message)),
+      ...(values.json ? {} : { onProgress: (message: string) => console.error(display(message)) }),
     });
     if (values.json) console.log(JSON.stringify(report, null, 2));
     else {
@@ -187,8 +205,8 @@ async function main(): Promise<number> {
       root: directory,
       task: values.task,
       provider: codeModel,
-      check: values.check,
-      onAction: values.json ? undefined : message => console.error(display(message)),
+      ...(values.check ? { check: values.check } : {}),
+      ...(values.json ? {} : { onAction: (message: string) => console.error(display(message)) }),
     });
     if (values.json) console.log(JSON.stringify(result, null, 2));
     else {

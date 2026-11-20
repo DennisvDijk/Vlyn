@@ -101,7 +101,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
     if (!goal) return;
     const check = (await ask(`Verification command [${options.defaultCheck ?? 'none'}]: `)) || options.defaultCheck;
     print('Planning…');
-    let plan = await planTasks({ root: options.root, goal, provider: options.provider, check, memory: recall(options.journal, options.root, goal) });
+    let plan = await planTasks({ root: options.root, goal, provider: options.provider, memory: recall(options.journal, options.root, goal), ...(check ? { check } : {}) });
     let tasks: CodingTask[] = plan.tasks;
     for (;;) {
       print('', `Plan for: ${clean(goal)}`, ...tasks.map((task, index) => `  ${index + 1}. ${clean(task.id)} — ${clean(task.task)}`), ...plan.warnings.map(warning => `  ! ${warning}`));
@@ -110,7 +110,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
       const [command, number] = answer.split(/\s+/u);
       const index = Number(number) - 1;
       if (command === 'go') break;
-      if (command === 'replan') { plan = await planTasks({ root: options.root, goal, provider: options.provider, check, memory: recall(options.journal, options.root, goal) }); tasks = plan.tasks; }
+      if (command === 'replan') { plan = await planTasks({ root: options.root, goal, provider: options.provider, memory: recall(options.journal, options.root, goal), ...(check ? { check } : {}) }); tasks = plan.tasks; }
       else if (command === 'drop' && tasks[index]) tasks = tasks.filter((_, position) => position !== index);
       else if (command === 'edit' && tasks[index]) {
         const text = await ask('New instruction: ');

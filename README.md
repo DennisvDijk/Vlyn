@@ -157,8 +157,9 @@ vlyn status examples/payments --json
 
 ```sh
 npm ci --ignore-scripts
+npm run lint
 npm run check
 npm test
 ```
 
-CI runs both on Linux (Node 24.12 and 26), macOS and Windows. Tests use scripted model replies and temporary Git repositories; see [CONTRIBUTING.md](CONTRIBUTING.md).
+CI lints and typechecks once, then tests on Linux, macOS, and Windows for Node 24 (Maintenance LTS) and Node 26 (Active LTS). Tests use scripted model replies and temporary Git repositories. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

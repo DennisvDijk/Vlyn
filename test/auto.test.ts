@@ -22,7 +22,7 @@ test('a plain-language goal becomes a spec and tasks with owned files; overlappi
   const plan = await planTasks({
     root, goal: 'Rename alpha and beta', check: pass,
     provider: async messages => {
-      sent = messages[1].content;
+      sent = messages[1]?.content ?? '';
       return JSON.stringify({
         spec: { non_goals: ['no new files'], assumptions: ['a.txt is plain text'], acceptance: ['both renamed'], risks: [] },
         tasks: [
@@ -36,8 +36,8 @@ test('a plain-language goal becomes a spec and tasks with owned files; overlappi
   assert.match(sent, /a\.txt/u);
   assert.match(sent, /most_imported_files/u);
   assert.deepEqual(plan.tasks.map(task => task.id), ['alpha-beta', 'util']);
-  assert.deepEqual(plan.tasks[0].files?.slice().sort(), ['a.txt', 'b.txt']);
-  assert.equal(plan.tasks[0].check, pass);
+  assert.deepEqual(plan.tasks[0]?.files?.slice().sort(), ['a.txt', 'b.txt']);
+  assert.equal(plan.tasks[0]?.check, pass);
   assert.deepEqual(plan.spec.nonGoals, ['no new files']);
   assert.deepEqual(plan.spec.acceptance, ['both renamed']);
   await assert.rejects(planTasks({ root, goal: 'x', provider: async () => '{"tasks":[]}' }), /1 to 32 tasks|1 to \d+ tasks/u);
@@ -66,7 +66,7 @@ test('edits outside a task\'s owned files are not verified, and converging combi
 
   const stray = await journal.create({ root, goal: 'Strays', workers: 1, tasks: [{ id: 'stray', task: 'Change alpha', check: pass, files: ['b.txt'] }] });
   const result = await executeRun(journal, stray.id, { provider: scripted({ stray: edit('a.txt', 'alpha', 'A') }) });
-  assert.equal(result.tasks[0].status, 'unverified');
+  assert.equal(result.tasks[0]?.status, 'unverified');
 });
 
 test('a run survives a crash: finished work is kept and the interrupted task restarts from the base revision', async context => {
@@ -77,6 +77,7 @@ test('a run survives a crash: finished work is kept and the interrupted task res
   ] });
   // Simulate a crash: alpha had finished, beta was mid-edit when the process died.
   const [alpha, beta] = journal.tasks(run.id);
+  if (!alpha || !beta) throw new Error('expected both tasks');
   await writeFile(join(alpha.worktree, 'a.txt'), 'ALPHA');
   journal.setTask(run.id, 'alpha', 'completed', { task: alpha.task, worktree: alpha.worktree, status: 'completed', changedFiles: ['a.txt'], diff: 'kept' });
   await writeFile(join(beta.worktree, 'b.txt'), 'half-edited');
@@ -127,12 +128,12 @@ test('the interactive TUI plans from a goal, lets the person edit the plan, runs
   let text = '';
   output.on('data', chunk => { text += chunk.toString(); });
   const model = async (messages: { role: string; content: string }[]) => {
-    if (messages[0].content.startsWith('You turn')) {
+    if (messages[0]?.content.startsWith('You turn')) {
       return JSON.stringify({ tasks: [{ id: 'alpha', task: 'Change alpha' }, { id: 'beta', task: 'Change beta' }, { id: 'extra', task: 'Not wanted' }] });
     }
-    const system = messages[0].content;
+    const system = messages[0]?.content ?? '';
     assert.match(system, /coding agent/u);
-    const mine = messages[1].content.includes('Change alpha') ? edit('a.txt', 'alpha', 'A') : edit('b.txt', 'beta', 'B');
+    const mine = (messages[1]?.content ?? '').includes('Change alpha') ? edit('a.txt', 'alpha', 'A') : edit('b.txt', 'beta', 'B');
     return JSON.stringify(mine[messages.filter(message => message.role === 'assistant').length]);
   };
   const done = runTui({ input, output, journal, root, provider: model, workers: 2 });
@@ -160,7 +161,8 @@ test('the interactive TUI plans from a goal, lets the person edit the plan, runs
   assert.match(text, /alpha completed/u);
   assert.match(text, /\+A/u);
   assert.match(text, /finished\s+Edit the text files/u);
-  const [run] = journal.runs();
+  const run = journal.runs()[0];
+  if (!run) throw new Error('expected a run');
   assert.deepEqual(journal.tasks(run.id).map(task => task.status), ['completed', 'completed']);
 });
 
@@ -169,7 +171,7 @@ test('board shows progress and escapes control characters', () => {
     { runId: 'x', task: { id: 'one', task: 'First' }, status: 'completed', attempts: 1, worktree: '/w' },
     { runId: 'x', task: { id: 'two', task: 'Second' }, status: 'pending', attempts: 0, worktree: '/w' },
   ]);
-  assert.match(lines[1], /abcdef12 · running · 1\/2 \[█░\]/u);
+  assert.match(lines[1] ?? '', /abcdef12 · running · 1\/2 \[█░\]/u);
   assert.ok(!lines.join('').includes('\u001b'));
 });
 
@@ -192,15 +194,16 @@ test('planning recalls relevant earlier outcomes from the journal, failures firs
     { id: 'alpha', task: 'Change alpha', check: pass, files: ['a.txt'] }, { id: 'util', task: 'Tidy util', check: pass, files: ['src/util.ts'] },
   ] });
   const [alpha, util] = journal.tasks(earlier.id);
+  if (!alpha || !util) throw new Error('expected both tasks');
   journal.setTask(earlier.id, 'alpha', 'unverified', { task: alpha.task, worktree: alpha.worktree, status: 'unverified', changedFiles: ['a.txt', 'b.txt'], outOfScope: ['b.txt'], diff: '' });
   journal.setTask(earlier.id, 'util', 'completed', { task: util.task, worktree: util.worktree, status: 'completed', changedFiles: ['src/util.ts'], diff: '' });
   const { recall } = await import('../src/memory.ts');
   const memories = recall(journal, root, 'Rename alpha again', { files: ['a.txt'] });
-  assert.equal(memories[0].task, 'alpha');
-  assert.match(memories[0].note, /outside its files: b\.txt/u);
+  assert.equal(memories[0]?.task, 'alpha');
+  assert.match(memories[0]?.note ?? '', /outside its files: b\.txt/u);
   assert.equal(recall(journal, root, 'Rename alpha again', { limit: 1 }).length, 1);
   assert.deepEqual(recall(journal, root, 'unrelated zebra'), []);
   let sent = '';
-  await planTasks({ root, goal: 'Rename alpha again', memory: memories, provider: async messages => { sent = messages[1].content; return JSON.stringify({ tasks: [{ id: 'a', task: 'a', files: ['a.txt'] }] }); } });
+  await planTasks({ root, goal: 'Rename alpha again', memory: memories, provider: async messages => { sent = messages[1]?.content ?? ''; return JSON.stringify({ tasks: [{ id: 'a', task: 'a', files: ['a.txt'] }] }); } });
   assert.match(sent, /earlier_runs/u);
 });

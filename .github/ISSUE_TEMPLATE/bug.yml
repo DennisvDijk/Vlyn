@@ -1,0 +1,20 @@
+name: Bug
+description: Something Vlyn did that it should not have done
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What you expected
+  - type: input
+    attributes:
+      label: Node version
+      placeholder: v24.22.3
+  - type: textarea
+    attributes:
+      label: How to reproduce
+      description: Do not paste API keys or other secrets.

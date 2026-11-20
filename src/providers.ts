@@ -29,9 +29,12 @@ const preference = [/fable/iu, /opus/iu, /gpt-5(?!.*(?:mini|nano|chat))/iu, /son
 export function resolveConfig(env: NodeJS.ProcessEnv = process.env, flags: { model?: string; baseUrl?: string } = {}): ProviderConfig | undefined {
   const explicit = env.VLYN_PROVIDER?.toLowerCase();
   const baseOverride = flags.baseUrl ?? env.VLYN_BASE_URL ?? env.OPENAI_BASE_URL ?? env.LITELLM_BASE_URL;
-  const pick = (...names: string[]) => names.map(name => ({ name, value: env[name]?.trim() })).find(item => item.value);
+  const pick = (...names: string[]): { name: string; value: string } | undefined => names.flatMap(name => {
+    const value = env[name]?.trim();
+    return value ? [{ name, value }] : [];
+  }).at(0);
   let kind: ProviderKind;
-  let key: { name: string; value?: string } | undefined;
+  let key: { name: string; value: string } | undefined;
   if (explicit === 'anthropic' || (!explicit && !baseOverride && !pick('VLYN_API_KEY', 'OPENAI_API_KEY', 'LITELLM_API_KEY') && pick('ANTHROPIC_API_KEY'))) {
     kind = 'anthropic';
     key = pick('VLYN_API_KEY', 'ANTHROPIC_API_KEY');

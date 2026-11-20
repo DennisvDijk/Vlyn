@@ -41,20 +41,20 @@ test('CLI reports the incompatible deployed version and leaves an unknown consum
   assert.equal(initial.code, 2);
   assert.equal(initial.report.status, 'incompatible');
   assert.deepEqual(initial.report.checks.map(row => row.status), ['passed', 'failed', 'unknown']);
-  assert.equal(initial.report.checks[1].evidence?.attempt.candidate.digest, initial.report.candidate.digest);
-  assert.equal(initial.report.checks[1].evidence?.attempt.check.source.path, 'contracts/export-v1.json');
+  assert.equal(initial.report.checks[1]?.evidence?.attempt.candidate.digest, initial.report.candidate.digest);
+  assert.equal(initial.report.checks[1]?.evidence?.attempt.check.source.path, 'contracts/export-v1.json');
 
   const manifest = join(workspace, 'deployment.json');
   const original = await readFile(manifest, 'utf8');
   await writeFile(manifest, original.replace('"export-v1"', '"export-v2"'));
   const rolled = execute('plan', workspace, database).report;
   assert.deepEqual(rolled.checks.map(row => row.status), ['passed', 'stale', 'unknown']);
-  assert.equal(rolled.checks[1].previous?.attempt.check.revision, 'export-v1');
+  assert.equal(rolled.checks[1]?.previous?.attempt.check.revision, 'export-v1');
 
   const verified = execute('run', workspace, database);
   assert.equal(verified.code, 3);
   assert.deepEqual(verified.report.checks.map(row => row.status), ['passed', 'passed', 'unknown']);
-  assert.equal(verified.report.checks[0].evidence?.attempt.id, initial.report.checks[0].evidence?.attempt.id);
+  assert.equal(verified.report.checks[0]?.evidence?.attempt.id, initial.report.checks[0]?.evidence?.attempt.id);
   assert.deepEqual(execute('status', workspace, database).report, verified.report);
 });
 
@@ -79,12 +79,12 @@ test('passing checks only produce a compatible verdict for complete inventory', 
   };
   await writeFile(path, JSON.stringify(deployment));
   const partial = execute('run', workspace, database);
-  assert.equal(partial.report.checks[0].status, 'passed');
+  assert.equal(partial.report.checks[0]?.status, 'passed');
   assert.equal(partial.code, 3);
   await writeFile(path, JSON.stringify({ ...deployment, inventory: 'complete' }));
   const complete = execute('run', workspace, database);
   assert.equal(complete.code, 0);
-  assert.equal(complete.report.checks[0].evidence?.attempt.id, partial.report.checks[0].evidence?.attempt.id);
+  assert.equal(complete.report.checks[0]?.evidence?.attempt.id, partial.report.checks[0]?.evidence?.attempt.id);
 });
 
 test('workers claim distinct checks concurrently', async context => {
@@ -126,7 +126,7 @@ test('expired attempts cannot overwrite a reclaimed check across coordinators', 
     const result: Result = { status: 'passed', details: ['Checked'] };
     assert.equal(first.finish(workspace, crashed, result, 111), false);
     assert.equal(second.finish(workspace, retried, result, 112), true);
-    assert.equal(first.report(workspace.stream, 113)?.checks[0].evidence?.attempt.id, retried.id);
+    assert.equal(first.report(workspace.stream, 113)?.checks[0]?.evidence?.attempt.id, retried.id);
   } finally {
     first.close();
     second.close();
@@ -146,7 +146,7 @@ test('a late green check stays historical when the candidate changes during exec
     store.observe(updated);
     assert.equal(store.finish(workspace, started, { status: 'passed', details: ['Old input passed'] }, 101), true);
     const report = store.report(workspace.stream, 102);
-    assert.equal(report?.checks[0].status, 'stale');
+    assert.equal(report?.checks[0]?.status, 'stale');
     assert.equal(report?.checks[0].previous?.attempt.candidate.digest, workspace.observation.candidate.digest);
     assert.equal(report?.status, 'unverified');
   } finally {

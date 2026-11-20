@@ -34,7 +34,11 @@ export async function gitRepo(context: TestContext, files: Record<string, string
 export function scripted(actions: Record<string, unknown[]>) {
   return (task: { id: string }) => {
     let index = 0;
-    return async () => JSON.stringify(actions[task.id][index++]);
+    return async () => {
+      const step = actions[task.id]?.[index++];
+      if (step === undefined) throw new Error(`No scripted reply for ${task.id}`);
+      return JSON.stringify(step);
+    };
   };
 }
 

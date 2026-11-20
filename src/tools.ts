@@ -82,7 +82,7 @@ export async function impactTool(directory: string, files: string[], since?: str
 /** `vlyn doctor`: environment readiness for running the harness. */
 export async function doctorTool(directory: string, env: NodeJS.ProcessEnv = process.env): Promise<ToolOutput> {
   const checks: { name: string; ok: boolean; detail: string; required: boolean }[] = [];
-  const [major, minor] = process.versions.node.split('.').map(Number);
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
   checks.push({ name: 'Node.js 24.12 or newer', ok: major > 24 || (major === 24 && minor >= 12), detail: process.versions.node, required: true });
   let gitVersion = '';
   try { gitVersion = execFileSync('git', ['--version'], { encoding: 'utf8' }).trim(); } catch { /* reported below */ }
