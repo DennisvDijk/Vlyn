@@ -134,7 +134,9 @@ test('messages wait in the journal until they are acknowledged', async context =
   const from = runtime.spawn('planner');
   const to = runtime.spawn('verifier');
   runtime.send(from.actor.id, to.actor.id, 'verdict', { status: 'failed' });
-  assert.equal((runtime.inbox(to.actor.id)[0]?.body as { status: string }).status, 'failed');
+  const first = runtime.inbox(to.actor.id)[0];
+  if (!first) throw new Error('missing message');
+  assert.equal((first.body as { status: string }).status, 'failed');
   assert.equal(runtime.inbox(to.actor.id).length, 1);
   runtime.ack(runtime.inbox(to.actor.id).map(message => message.id));
   assert.equal(runtime.inbox(to.actor.id).length, 0);
