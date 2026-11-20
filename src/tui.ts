@@ -8,6 +8,7 @@ import { executeRun } from './durable.ts';
 import type { Journal, RunRow, TaskRow, TaskStatus } from './durable.ts';
 import { planTasks } from './planner.ts';
 import type { CodingTask } from './parallel.ts';
+import type { ModelCatalog } from './providers.ts';
 import { doctorTool } from './tools.ts';
 
 const icons: Record<TaskStatus, string> = { pending: '○', running: '◐', completed: '●', unverified: '?', failed: '✗' };
@@ -22,6 +23,9 @@ export type TuiOptions = {
   provider?: AgentProvider;
   workers?: number;
   defaultCheck?: string;
+  /** Live model list; refreshed in the background while the session is open. */
+  catalog?: ModelCatalog;
+  refreshSeconds?: number;
 };
 
 /** Render a run as a compact status board. Pure, so it is easy to test. */
@@ -46,10 +50,13 @@ export async function runTui(options: TuiOptions): Promise<number> {
   const ask = async (question: string): Promise<string | undefined> => {
     try { return (await rl.question(question)).trim(); } catch { return undefined; }
   };
-  rl.on('close', () => { /* input ended */ });
+  const stopWatching = options.catalog && (options.refreshSeconds ?? 0) > 0
+    ? options.catalog.watch(Math.max(30, options.refreshSeconds as number) * 1000,
+      change => print('', `Models updated: ${[...change.added.map(id => `+${id}`), ...change.removed.map(id => `−${id}`)].join(' ')}`))
+    : undefined;
 
   async function execute(run: RunRow): Promise<void> {
-    if (!options.provider) { print('A model is needed to run tasks. Set OPENAI_API_KEY and VLYN_MODEL.'); return; }
+    if (!options.provider) { print('A model is needed to run tasks. Set VLYN_API_KEY (and VLYN_BASE_URL for a gateway).'); return; }
     const provider = options.provider;
     const controller = new AbortController();
     const stop = () => { controller.abort(); print('', 'Stopping after the running tasks finish. Resume any time with: resume ' + run.id.slice(0, 8)); };
@@ -88,7 +95,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
   }
 
   async function planFlow(): Promise<void> {
-    if (!options.provider) { print('A model is needed to plan tasks. Set OPENAI_API_KEY and VLYN_MODEL.'); return; }
+    if (!options.provider) { print('A model is needed to plan tasks. Set VLYN_API_KEY (and VLYN_BASE_URL for a gateway).'); return; }
     const goal = await ask('What should Vlyn do? ');
     if (!goal) return;
     const check = (await ask(`Verification command [${options.defaultCheck ?? 'none'}]: `)) || options.defaultCheck;
@@ -121,7 +128,7 @@ export async function runTui(options: TuiOptions): Promise<number> {
   print(color ? styleText('bold', 'Vlyn — describe a goal, review the plan, let agents work in parallel.') : 'Vlyn — describe a goal, review the plan, let agents work in parallel.');
   try {
     for (;;) {
-      const choice = await ask('\n[n]ew goal · [r]esume · [l]ist runs · [d]octor · [q]uit > ');
+      const choice = await ask('\n[n]ew goal · [r]esume · [l]ist runs · [m]odels · [d]octor · [q]uit > ');
       if (choice === undefined || choice === 'q' || choice === 'quit') return 0;
       try {
         if (choice === 'n' || choice === 'new') await planFlow();
@@ -132,11 +139,17 @@ export async function runTui(options: TuiOptions): Promise<number> {
           const id = choice.split(/\s+/u)[1] ?? (await ask('Run id (blank for the latest unfinished): '));
           const run = id ? options.journal.run(id) : options.journal.runs().find(item => item.status !== 'finished');
           if (!run) print('No matching run.'); else { await execute(run); await review(run); }
+        } else if (choice === 'm' || choice === 'models') {
+          if (!options.catalog) print('No model endpoint is configured.');
+          else {
+            const change = await options.catalog.refresh();
+            print(`${options.catalog.config.baseUrl} · ${change.models.length} chat models (+${change.added.length} −${change.removed.length})`, ...change.models.slice(0, 40).map(id => `  ${id}`));
+          }
         } else if (choice === 'd' || choice === 'doctor') print((await doctorTool(options.root)).text);
-        else print('Choose n, r, l, d or q.');
+        else print('Choose n, r, l, m, d or q.');
       } catch (error) { print(`Error: ${clean(error instanceof Error ? error.message : String(error))}`); }
     }
-  } finally { rl.close(); }
+  } finally { stopWatching?.(); rl.close(); }
 }
 
 export async function guessCheck(root: string): Promise<string | undefined> {

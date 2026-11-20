@@ -4,6 +4,7 @@ import {
   affectedTests, dependencies, dependents, findCycles, normalizeProjectPath, orphans, scanProject, toDot, toMermaid,
 } from './graph.ts';
 import type { ProjectGraph } from './graph.ts';
+import { resolveConfig } from './providers.ts';
 
 export type ToolOutput = { code: number; text: string; json: unknown };
 export type GraphFormat = 'text' | 'json' | 'mermaid' | 'dot';
@@ -95,7 +96,13 @@ export async function doctorTool(directory: string, env: NodeJS.ProcessEnv = pro
   } catch { /* not a repository */ }
   checks.push({ name: 'Project is a Git repository', ok: inRepo, detail: inRepo ? 'yes' : 'needed for batch worktrees', required: false });
   checks.push({ name: 'Working tree is clean', ok: clean, detail: clean ? 'yes' : 'batch requires a clean tree', required: false });
-  checks.push({ name: 'OPENAI_API_KEY is set', ok: Boolean(env.OPENAI_API_KEY), detail: env.OPENAI_API_KEY ? 'set' : 'needed for code, batch and model planning', required: false });
+  let endpoint = 'no key found; set VLYN_API_KEY (and VLYN_BASE_URL for a gateway)';
+  let configured = false;
+  try {
+    const config = resolveConfig(env);
+    if (config) { configured = true; endpoint = `${config.kind} · ${config.baseUrl} · key from ${config.keyName} · model ${config.model}`; }
+  } catch (error) { endpoint = error instanceof Error ? error.message : String(error); }
+  checks.push({ name: 'Model endpoint configured', ok: configured, detail: endpoint, required: false });
   const failed = checks.some(check => check.required && !check.ok);
   const text = checks.map(check => `${check.ok ? 'ok  ' : check.required ? 'FAIL' : 'warn'} ${check.name} · ${check.detail}`).join('\n');
   return { code: failed ? 1 : 0, json: { checks }, text };

@@ -147,11 +147,11 @@ test('board shows progress and escapes control characters', () => {
 test('CLI lists runs from the journal and explains what auto and resume need', async context => {
   const { spawnSync } = await import('node:child_process');
   const home = await tempDir(context);
-  const env = { ...process.env, VLYN_HOME: home, OPENAI_API_KEY: '', VLYN_MODEL: '' };
+  const env = { ...process.env, VLYN_HOME: home, OPENAI_API_KEY: '', ANTHROPIC_API_KEY: '', LITELLM_API_KEY: '', VLYN_API_KEY: '', VLYN_BASE_URL: '', OPENAI_BASE_URL: '', LITELLM_BASE_URL: '', VLYN_MODEL: '' };
   const cli = new URL('../src/cli.ts', import.meta.url).pathname;
   const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
   assert.match(run('runs').stdout, /No runs yet/u);
-  assert.match(run('auto', '.', '--goal', 'Do it').stderr, /requires --model/u);
+  assert.match(run('auto', '.', '--goal', 'Do it').stderr, /needs a model/u);
   assert.match(run('auto', '.').stderr, /requires --goal/u);
   assert.match(run('resume').stderr, /No matching unfinished run/u);
 });

@@ -29,14 +29,14 @@ plan> [go | edit N | drop N | add | replan | cancel] go
 
 ## Quick start
 
-Needs Node.js 24.12 or newer and Git. A model needs `OPENAI_API_KEY` and a model name that supports Chat Completions JSON mode.
+Needs Node.js 24.12 or newer and Git, plus a key for any model system (see [Models and gateways](#models-and-gateways)).
 
 ```sh
-export OPENAI_API_KEY=…
-export VLYN_MODEL=your-model
+export VLYN_API_KEY=…      # or OPENAI_API_KEY, LITELLM_API_KEY, ANTHROPIC_API_KEY
 cd your-project            # a clean Git repository root
 
-vlyn doctor                # check Node, Git, key and tree state
+vlyn doctor                # check Node, Git, endpoint and tree state
+vlyn models                # list the models your key can use
 vlyn                       # interactive session
 vlyn auto --goal "Add input validation to the CLI" --check "npm test"
 vlyn auto --goal "…" --plan-only     # see the generated tasks first
@@ -47,6 +47,22 @@ vlyn resume                # continue the latest unfinished run
 From a clone, use `node src/cli.ts` in place of `vlyn`, or `npm link` to install the command.
 
 Repository content, including files agents read, is sent to the configured model provider.
+
+## Models and gateways
+
+Vlyn works with any OpenAI-compatible endpoint (OpenAI, LiteLLM and other AI gateways, OpenRouter, vLLM, Ollama, LM Studio) and with Anthropic's native API.
+
+| Setting | Meaning |
+| --- | --- |
+| `VLYN_API_KEY` | Your key. Falls back to `LITELLM_API_KEY`, `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`. |
+| `VLYN_BASE_URL` / `--base-url` | Endpoint, e.g. `https://gateway.example.com/v1`. Must be https, except for localhost or with `VLYN_ALLOW_INSECURE=1`. Local servers need no key. |
+| `VLYN_PROVIDER` | `anthropic` to force the native Anthropic API when both kinds of key are set. |
+| `VLYN_MODEL` / `--model` | A model id, or `auto` (the default). |
+| `VLYN_MODEL_REFRESH_SECONDS` | How often the TUI refreshes the model list in the background (default 600). |
+
+**Models refresh themselves.** Vlyn reads the model list from your endpoint with your own key (`GET /models`, which LiteLLM, OpenRouter, Ollama and the others expose), caches it by a hash of endpoint and key, and refreshes it when stale. A failed refresh keeps the last known list. With `auto`, Vlyn chooses from the live list; if the chosen model is retired or rejected mid-run it refreshes, chooses again and retries once. Pin a model to opt out. The TUI announces added and removed models as they happen, and `vlyn models --refresh` fetches on demand. The choice among models in `auto` is a heuristic that prefers stronger families; pin a model when it matters.
+
+Gateways that reject JSON mode are retried without it, and JSON is extracted from fenced or prefixed replies. Keys are never written to the cache or to error messages.
 
 ## Durable execution
 
@@ -105,6 +121,7 @@ vlyn status examples/payments --json
 | Module | Role |
 | --- | --- |
 | `src/coding-agent.ts` | Model loop with scoped tools and a per-task graph |
+| `src/providers.ts` | Any OpenAI-compatible or Anthropic endpoint, live model catalog and refresh |
 | `src/planner.ts` | Goal → validated, independent tasks |
 | `src/durable.ts` | SQLite journal, run creation, recovery, resumable executor |
 | `src/parallel.ts` | One task in one worktree; the batch runner |
@@ -114,7 +131,8 @@ vlyn status examples/payments --json
 
 ## Limitations
 
-- Model access is OpenAI Chat Completions only. Other providers are not wired in.
+- Model access is OpenAI-compatible Chat Completions plus native Anthropic. Native Gemini and Bedrock need a gateway such as LiteLLM in front.
+- Tool use is Vlyn's own JSON action protocol, not each vendor's native tool calling.
 - Tasks are independent by design; Vlyn does not merge worktrees for you. Review with `diff N` or Git and apply what you want.
 - The planner can only warn about overlapping files; it cannot guarantee independence.
 - Dependency discovery covers JavaScript and TypeScript relative imports.
