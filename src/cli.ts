@@ -13,6 +13,8 @@ import type { Check } from './workspace.ts';
 import { runCodingAgent } from './coding-agent.ts';
 import { readTasks, runParallel } from './parallel.ts';
 import { ActorRuntime } from './actors.ts';
+import { SecurityLog } from './broker.ts';
+import { manifestFor } from './capabilities.ts';
 import { Journal, applyToBranch, converge, defaultHome, executeRun } from './durable.ts';
 import { runEval } from './eval.ts';
 import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
@@ -22,7 +24,7 @@ import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   tui          Interactive session: state a goal, review the generated plan, watch agents work
   auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
@@ -33,6 +35,7 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|ap
   eval         Score a scripted local suite: pass rate, verdict honesty, Brier score. No network
   converge     Rebuild the integration worktree for a finished run and re-run its checks
   apply        Commit that integration onto a new branch (--branch NAME). Does not check out the branch
+  audit        Show the capability audit for a run (actor, action, allow or deny)
   models       List the models your key can use; refreshed from the endpoint
   code         Work on a coding task in a project
   batch        Run independent coding tasks in isolated Git worktrees
@@ -60,6 +63,7 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|ap
   --file PATH  Changed file for impact (repeatable)
   --since REV  Use files changed since a Git revision for impact
     --apply      With lessons: write the suggestion into AGENTS.md (off unless you pass this)
+    --require-sandbox  Refuse checks when this OS cannot confine them
   --json       Emit the report as JSON
   --help       Show usage
 
@@ -98,7 +102,7 @@ async function main(): Promise<number> {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
-      json: { type: 'boolean' }, apply: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -150,6 +154,22 @@ async function main(): Promise<number> {
       const applied = await applyToBranch(journal, found.id, values.branch);
       console.log(`${applied.branch} ${applied.commit.slice(0, 8)}`);
       return 0;
+    } finally { journal.close(); }
+  }
+  if (positionals[0] === 'audit') {
+    const journal = new Journal(values.home);
+    try {
+      const log = new SecurityLog(journal.db);
+      const runId = positionals[1] ? journal.run(positionals[1])?.id : undefined;
+      if (positionals[1] && !runId) throw new Error('No matching run.');
+      const chain = log.verify();
+      const events = log.events(runId);
+      if (values.json) console.log(JSON.stringify({ ok: chain.ok, brokenAt: chain.brokenAt, events }, null, 2));
+      else {
+        console.log(chain.ok ? 'audit chain ok' : `audit chain broken at ${chain.brokenAt}`);
+        console.log(events.length ? events.map(event => `${event.decision.padEnd(5)} ${event.actorId} ${event.action} ${event.target}`).join('\n') : 'No audit events.');
+      }
+      return chain.ok ? 0 : 2;
     } finally { journal.close(); }
   }
   if (positionals[0] === 'models') {
@@ -219,6 +239,7 @@ async function main(): Promise<number> {
       process.once('SIGINT', () => { controller.abort(); console.error('Finishing running tasks, then stopping. Resume later with: vlyn resume ' + runId.slice(0, 8)); });
       const { run, tasks } = await executeRun(journal, runId, {
         provider: () => runner, signal: controller.signal,
+        ...(values['require-sandbox'] ? { requireSandbox: true } : {}),
         ...(values.json ? {} : { onEvent: (event: { message: string }) => console.error(display(event.message)) }),
       });
       console.log(values.json ? JSON.stringify({ run, tasks }, null, 2) : board(run, tasks).join('\n'));
@@ -264,6 +285,8 @@ async function main(): Promise<number> {
       task: values.task,
       provider: codeModel,
       ...(values.check ? { check: values.check } : {}),
+      manifest: manifestFor(directory, { ...(values.check ? { check: values.check } : {}) }),
+      ...(values['require-sandbox'] ? { requireSandbox: true } : {}),
       ...(values.json ? {} : { onAction: (message: string) => console.error(display(message)) }),
     });
     if (values.json) console.log(JSON.stringify(result, null, 2));

@@ -1,0 +1,11 @@
+{
+  "note": "One measurement of `node -e process.exit(0)` on the machine that produced this file. It is not a cross-platform benchmark. The test only asserts that a sandboxed start finishes in under 8 seconds, which is the 'not a VM' bar.",
+  "sample": {
+    "driver": "unshare-net+node-permission",
+    "network": "unshare",
+    "filesystem": "node-permission",
+    "plainMs": 21,
+    "sandboxedMs": 24,
+    "rssBytes": 73498624
+  }
+}

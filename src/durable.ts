@@ -5,6 +5,7 @@ import { cp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { SecurityLog } from './broker.ts';
 import type { AgentProvider } from './coding-agent.ts';
 import { executeTask, gitOutput } from './parallel.ts';
 import type { CodingTask, TaskResult } from './parallel.ts';
@@ -185,6 +186,7 @@ export async function executeRun(journal: Journal, runId: string, options: {
   provider: (task: CodingTask) => AgentProvider;
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
+  requireSandbox?: boolean;
 }): Promise<{ run: RunRow; tasks: TaskRow[]; convergence?: Convergence }> {
   const run = journal.run(runId);
   if (!run) throw new Error(`No run ${runId}`);
@@ -192,6 +194,7 @@ export async function executeRun(journal: Journal, runId: string, options: {
   if (owner && owner !== process.pid && alive(owner)) throw new Error(`Run ${run.id.slice(0, 8)} is already being executed by process ${owner}`);
   journal.setRun(run.id, 'running', process.pid);
   const say = (message: string) => { const event = journal.event(run.id, message); options.onEvent?.(event); };
+  const security = new SecurityLog(journal.db);
   for (const row of journal.tasks(run.id)) {
     if (row.status !== 'running') continue;
     await gitOutput(row.worktree, ['reset', '--hard', run.base]);
@@ -211,7 +214,10 @@ export async function executeRun(journal: Journal, runId: string, options: {
       if (!row) return;
       journal.setTask(run.id, row.task.id, 'running');
       say(`Started ${row.task.id}`);
-      const result = await executeTask(row.task, row.worktree, options.provider(row.task), spec ? briefFor(spec, row.task, allTasks) : undefined);
+      const result = await executeTask(row.task, row.worktree, options.provider(row.task), spec ? briefFor(spec, row.task, allTasks) : undefined, {
+        ...(options.requireSandbox !== undefined ? { requireSandbox: options.requireSandbox } : {}),
+        audit: event => security.append({ ...event, runId: run.id, actorId: row.task.id }),
+      });
       if (options.signal?.aborted && result.error) {
         // Interrupted mid-task: leave it `running` so resume restarts it cleanly.
         say(`Stopped ${row.task.id} before it finished`);

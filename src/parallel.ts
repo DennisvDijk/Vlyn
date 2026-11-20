@@ -4,6 +4,7 @@ import { mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { manifestFor } from './capabilities.ts';
 import { runCodingAgent } from './coding-agent.ts';
 import type { AgentProvider, CodingResult } from './coding-agent.ts';
 import { isObject } from './workspace.ts';
@@ -71,14 +72,21 @@ export function judgeTask(input: {
   return input.lastCheck.exitCode === 0 ? 'completed' : 'failed';
 }
 
-export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider, context?: unknown): Promise<TaskResult> {
+export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider, context?: unknown, sandbox?: {
+  requireSandbox?: boolean;
+  audit?: (event: { action: string; target: string; decision: 'allow' | 'deny'; detail?: string }) => void;
+}): Promise<TaskResult> {
   let result: CodingResult | undefined;
   let error: string | undefined;
+  const manifest = task.check || task.files?.length ? manifestFor(worktree, task) : undefined;
   try {
     result = await runCodingAgent({
-      root: worktree, task: task.task, provider,
+      root: worktree, task: task.task, provider, actorId: task.id,
       ...(task.check ? { check: task.check } : {}),
       ...(context !== undefined ? { context } : {}),
+      ...(manifest ? { manifest } : {}),
+      ...(sandbox?.requireSandbox !== undefined ? { requireSandbox: sandbox.requireSandbox } : {}),
+      ...(sandbox?.audit ? { audit: sandbox.audit } : {}),
     });
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause);
@@ -89,13 +97,15 @@ export async function executeTask(task: CodingTask, worktree: string, provider: 
   const changedFiles = [...new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean))];
   const lastCheck = result?.checks.at(-1);
   const outOfScope = task.files?.length ? changedFiles.filter(file => !owns(task.files as string[], file)) : [];
-  const status = judgeTask({
+  const denied = result?.denied ?? [];
+  const judged = judgeTask({
     completed: Boolean(result?.completed),
     checkRequired: Boolean(task.check),
     outOfScope,
     ...(error !== undefined ? { error } : {}),
     ...(lastCheck ? { lastCheck } : {}),
   });
+  const status = denied.length && !error && result?.completed ? 'unverified' : judged;
   return { task, worktree, status, changedFiles, diff, ...(result ? { result } : {}), ...(error ? { error } : {}), ...(outOfScope.length ? { outOfScope } : {}) };
 }
 
