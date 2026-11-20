@@ -6,7 +6,7 @@
 
 **A coding tool: one goal becomes parallel tasks, each checked, each in its own git worktree.**
 
-The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Those three are **planned**. They are not in this tree yet. What runs today is the planner, the journal, and verdicts that follow the check.
+The direction is a harness shaped by research on memory and judgment, with an actor whose brain is a journal snapshot and a lightweight sandbox around checks. Actor snapshots are in the journal. Lessons, a decision journal, and the sandbox are **planned**. What runs today is the planner, the journal, actor snapshots, and verdicts that follow the check.
 
 No runtime dependencies. Node.js and Git.
 
@@ -66,6 +66,12 @@ flowchart LR
 
 Vlyn is a coding tool. [docs/research/state-of-the-art.md](docs/research/state-of-the-art.md) uses findings on memory, judgment, accidents, and confinement as **analogies** for how a plan is made, how a check is trusted, and how a crash is resumed. It does not claim that Vlyn is a brain, or that a sandbox is present when this OS cannot provide one. The shared phase list is [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## Actors
+
+A task agent can be an actor in the journal: a versioned snapshot of its working context, graph, decisions, claims, hypotheses, and the worktree's commit and diff. Idle actors are not kept in memory. `revert` returns to an earlier snapshot and keeps the later one. `fork` starts a sibling from a snapshot so two hypotheses do not share a brain. A crash retries once from the last snapshot. This is the actor idea, kept local. It does not call [Agent Substrate](https://github.com/agent-substrate/substrate). See [docs/adr/0001-actor-brain-snapshots.md](docs/adr/0001-actor-brain-snapshots.md).
+
+`vlyn actors` lists them. The user's checkout is still not where edits land.
+
 ## Limitations
 
 These are limits of the code on this branch, not a roadmap in disguise.
@@ -77,7 +83,7 @@ These are limits of the code on this branch, not a roadmap in disguise.
 - File ownership is whatever the model declared. Overlap is merged. Semantic independence is not proved.
 - The import graph is JavaScript and TypeScript relative imports only. Dynamic imports and package imports are invisible. The default text format and `--format json` exit 2 on a cycle. Mermaid and dot exit 0. Treat the graph as a lower bound.
 - Memory is recall of earlier task rows in this repository, capped at five items and about 2 KB. Turning those rows into reviewed `AGENTS.md` lessons is planned.
-- Actor snapshots, a decision journal, and `vlyn eval` are planned.
+- A decision journal and `vlyn eval` are planned.
 - Cross-repository reasoning is planned.
 - Nothing here has been scored against a live model in CI. Tests use scripted replies.
 
