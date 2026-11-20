@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/DennisvDijk/Vlyn/actions/workflows/ci.yml/badge.svg)](https://github.com/DennisvDijk/Vlyn/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D24.12-339933?logo=node.js&logoColor=white)](https://github.com/nodejs/release)
-[![License](https://img.shields.io/badge/license-UNLICENSED-lightgrey)](package.json)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 **A coding tool: one goal becomes parallel tasks, each checked, each in its own git worktree.**
 
@@ -108,6 +108,10 @@ These are limits of the code on this branch, not a roadmap in disguise.
 - `vlyn eval` scores a scripted suite. It does not score a live model.
 - Cross-repository reasoning is planned.
 - Nothing here has been scored against a live model in CI. Tests use scripted replies.
+
+## License
+
+Vlyn is licensed under the Apache License, Version 2.0. Copyright 2026 Dennis van Dijk. The terms are in [LICENSE](LICENSE). Attribution is in [NOTICE](NOTICE).
 
 ## Development
 

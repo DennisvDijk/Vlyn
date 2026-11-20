@@ -2,7 +2,7 @@
   "name": "vlyn",
   "version": "0.2.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "description": "A standalone coding agent harness: goals become parallel tasks, each with its own worktree and dependency graph.",
   "type": "module",
   "engines": {
@@ -17,7 +17,9 @@
   "files": [
     "src",
     "examples",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "vlyn": "node src/cli.ts",
