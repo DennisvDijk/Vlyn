@@ -1,6 +1,8 @@
-# Contract Rehearsal
+# Coding Harness
 
-A standalone TypeScript harness for checking a proposed JSON response against the consumer versions recorded in a deployment snapshot.
+This private repository is the home of the complete standalone coding harness. The intended harness will support coding tasks through its own model loop, context handling, tool execution, and task-driven parallel workers.
+
+The first implemented capability is **Contract Rehearsal**. It checks a proposed JSON response against consumer versions recorded in a deployment snapshot. The current model integration can prioritize those checks. The general coding loop, editing tools, live discovery, and broader agent orchestration remain to be built.
 
 ## Try it
 
