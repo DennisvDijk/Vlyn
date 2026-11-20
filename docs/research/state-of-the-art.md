@@ -32,6 +32,11 @@ Competitor products are a constraint, not a template. The short section after th
 | Stale-check rule | Normalization of deviance (Columbia accident report) | A check from before the last edit is not success | `lastCheck.stale` forces `unverified`. Covered by the coding-agent test and an eval case |
 | Actor brain snapshot | Hewitt actors; Erlang/OTP supervision; Agent Substrate's checkpoint idea, not its cluster | Idle agents resume from journaled cognitive state; a crash restarts from the last snapshot; hypotheses fork | Resume across two `ActorRuntime` objects on one SQLite file. Supervisor retry restores the pre-crash brain. `revert` keeps the abandoned version addressable |
 | Apply to a branch | — (engineering, from the existing convergence gap) | The merged diff is reviewable without touching the checkout | `vlyn apply --branch` creates a branch. HEAD and the worktree of the user's checkout stay put |
+| Capability manifest | Least privilege (Saltzer & Schroeder 1975); capability systems (Capsicum; WASI) | A task cannot write a file it does not own, and cannot run a check string it was not given | Denied write leaves the file unchanged. A command not on the list is refused. Tests in the sandbox PR |
+| Parent broker | Zero trust: no trust from location ([NIST SP 800-207](https://doi.org/10.6028/NIST.SP.800-207)) | The API key never enters the check process. Model calls stay in the parent, and only to an allowlisted host | Child env has no `VLYN_API_KEY`. Output and the audit row redact the secret. A host not on the list throws |
+| OS confinement, only when present | Seatbelt, user namespaces, Landlock, seccomp, gVisor, Firecracker: different costs | A check does not get a network when the OS can say so, without a VM | Linux `unshare --net` yields `ENETUNREACH` in the test. Doctor reports `landlock: false` and `seccomp: false`. Overhead sample is tens of milliseconds, test ceiling 8 s |
+| Audit hash chain | Provenance; the contact-tracing analogy is only the audit trail | You can see which actor was denied which path, and see if that row was edited | `vlyn audit` exits 2 after a one-row tamper |
+| Injection flags | Indirect prompt injection ([Greshake et al. 2023](https://arxiv.org/abs/2302.12173); [OWASP LLM01](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)) | Text in a repo file does not become an order. The manifest still applies if the model obeys it anyway | A file containing "ignore previous instructions" is returned with `injection_flags` and `untrusted: true` |
 
 Phases and status live in [../ROADMAP.md](../ROADMAP.md). That file is the shared board. This document is the argument for the rows.
 
@@ -236,6 +241,33 @@ The same boundary is restated as an architecture decision with the actor impleme
 **Outcome.** A hypothesis can be abandoned by reverting the actor that tried it, without deleting the sibling that passed the check, and without a second process editing the same worktree.
 
 **Measure.** The actor test file: pool claim, cross-process resume, supervisor restore, revert keeps history, fork independence, message delivery, sleep distillation, reconsolidation, and `raceHypotheses` against `executeTask`.
+
+## Confinement, without a virtual machine
+
+The coding outcome is narrow: a check should not see the API key, should not write outside the task, and should not get a network unless the operator can see that this machine cannot enforce that. Least privilege in Saltzer and Schroeder's 1975 paper is the old statement of the same rule. Capsicum (Watson, Anderson, Laurie, and Kennaway, USENIX Security 2010) and WASI showed what a default-deny capability host looks like for a process. Vlyn does not embed either runtime. The manifest is the small version: read roots, write paths, one command string, child network none.
+
+[NIST SP 800-207](https://doi.org/10.6028/NIST.SP.800-207) is why the decision is not "it is already in the repo, so allow it." Each write and each command is allowed or denied again, in the parent, and the decision is logged. The model call is one of those decisions. It happens in the parent. `guardModel` refuses a base URL whose host is not on the list. The child is not given a client.
+
+Indirect prompt injection is the case where the untrusted text is the repository itself ([Greshake, Abdelnabi, Mishra, Endres, Holz, and Fritz, arXiv:2302.12173](https://arxiv.org/abs/2302.12173); [OWASP LLM01](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)). Flagging a few sentence shapes does not make a model immune. It keeps those lines labeled as data. The privilege boundary is the manifest, which does not depend on the model agreeing.
+
+Sandbox mechanisms are not interchangeable, and the doctor is required to say which one ran:
+
+| Mechanism | What it is good for | Why it is not the default here |
+| --- | --- | --- |
+| macOS Seatbelt (`sandbox-exec`) | Deny-default profile, including network, in a process | Used when the binary is on `PATH`. Not downloaded. Not a copy of any other product's profile |
+| Linux user namespaces (`unshare --net`, bubblewrap) | A network namespace without a VM. Bubblewrap also bind-mounts a filesystem | `unshare` is used when it works. Bubblewrap is used when it is installed. Neither is Landlock |
+| Landlock, seccomp-bpf | Kernel file and syscall policy without a VM | Not applied. A correct filter is arch-specific and wants a native helper. Shipping one would break the zero-dependency rule. Reported `false` |
+| gVisor, Firecracker | Stronger isolation | A guest kernel or a VM monitor. The idle-cost goal rules them out as the default. One no-op sample on Linux was 24 ms sandboxed against 21 ms plain |
+| Node `--permission` | Stops trusted Node code from touching files it was not given ([Node's own description](https://nodejs.org/api/permissions.html) calls it a seatbelt and not a malicious-code boundary) | Used for `node` checks. On Node 24.12 it denied `readFileSync` outside the allow path and did not stop `net.connect`. The doctor must not call that a network sandbox |
+| WASI | Deny-by-default imports for a wasm guest | A different runtime. Not required to edit a git repo |
+
+`--require-sandbox` is the operator saying the in-process allowlist is not enough. If the only driver is `gate-only`, the check does not start.
+
+Secrets follow the same cut. Names matching key, token, secret, password, credential, or authorization are removed from the child environment, and `NODE_OPTIONS` with them, because a preload is a way to get the key back. The audit detail is redacted with the same strings. `npm ci --ignore-scripts` in development is the supply-chain half of this: install scripts do not run for Vlyn's own install ([SLSA](https://slsa.dev/) is the vocabulary for that class of risk, not a certification of this repo).
+
+Quarantine, as an analogy only, is the child process without the parent's environment and without a network namespace when the OS granted one. Contact tracing, as an analogy only, is the audit row that names the actor and the path. Reason's layered defences are the reason several weak layers are still listed separately instead of being summed into one "secure" bit.
+
+The implementation is pull request 9. The threat model and the ADR live with that change. This section is the requirement those files are answerable to. It is not a measurement that Vlyn's profile is stricter than any other product's seatbelt. Where this OS cannot confine a shell check, the honest result is `network none` and a non-zero exit if `--require-sandbox` is set.
 
 ## What evaluation is for
 

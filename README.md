@@ -64,7 +64,7 @@ flowchart LR
 
 ## Research stance
 
-Vlyn is a coding tool. [docs/research/state-of-the-art.md](docs/research/state-of-the-art.md) uses findings on memory, judgment, and accidents as **analogies** for how a plan is made, how a check is trusted, and how a crash is resumed. It does not claim that Vlyn is a brain or that those effect sizes apply to a repository. The shared phase list, including what is deliberately not being copied from other coding agents, is [docs/ROADMAP.md](docs/ROADMAP.md).
+Vlyn is a coding tool. [docs/research/state-of-the-art.md](docs/research/state-of-the-art.md) uses findings on memory, judgment, accidents, and confinement as **analogies** for how a plan is made, how a check is trusted, and how a crash is resumed. It does not claim that Vlyn is a brain, or that a sandbox is present when this OS cannot provide one. The shared phase list is [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Limitations
 
