@@ -9,10 +9,12 @@ import type { Report } from './state.ts';
 import { readWorkspace } from './workspace.ts';
 import type { Check } from './workspace.ts';
 import { runCodingAgent } from './coding-agent.ts';
+import { readTasks, runParallel } from './parallel.ts';
 
-const usage = `Usage: npm run rehearse -- <code|plan|run|status> [workspace] [options]
+const usage = `Usage: npm run rehearse -- <code|batch|plan|run|status> [workspace] [options]
 
   code         Work on a coding task in a project
+  batch        Run independent coding tasks in isolated Git worktrees
   plan         Discover deployed consumer versions and record the current inputs
   run          Check ready consumer versions in parallel
   status       Read the last observed snapshot and its evidence
@@ -22,6 +24,7 @@ const usage = `Usage: npm run rehearse -- <code|plan|run|status> [workspace] [op
   --model NAME OpenAI model for code or optional check ordering (uses OPENAI_API_KEY)
   --task TEXT  Coding task for code
   --check CMD  Verification command for code
+  --tasks PATH JSON task file for batch
   --json       Emit the report as JSON
   --help       Show usage
 
@@ -59,6 +62,7 @@ async function main(): Promise<number> {
     options: {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
+      tasks: { type: 'string' },
       json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
@@ -67,11 +71,31 @@ async function main(): Promise<number> {
     return 0;
   }
   const [command, directory = '.'] = positionals;
+  if (command === 'batch') {
+    if (positionals.length > 2 || !values.tasks || !values.model?.trim() || !process.env.OPENAI_API_KEY) {
+      throw new Error('batch requires --tasks, --model and OPENAI_API_KEY');
+    }
+    if (values.db || values.task || values.check) throw new Error('Use a task file to specify tasks and checks');
+    const workers = Number(values.workers ?? '3');
+    const tasks = await readTasks(resolve(values.tasks));
+    const model = values.model;
+    const apiKey = process.env.OPENAI_API_KEY;
+    const report = await runParallel({
+      root: directory, tasks, workers, provider: () => openAIPlanner(model, apiKey),
+      onProgress: values.json ? undefined : message => console.error(display(message)),
+    });
+    if (values.json) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(`Run ${report.id} at ${display(report.directory)} (base ${report.base})`);
+      for (const task of report.tasks) console.log(`${task.status.toUpperCase()} ${display(task.task.id)} · ${display(task.worktree)}`);
+    }
+    return report.tasks.every(task => task.status === 'completed') ? 0 : 1;
+  }
   if (command === 'code') {
     if (positionals.length > 2 || !values.task?.trim() || !values.model?.trim() || !process.env.OPENAI_API_KEY) {
       throw new Error('code requires --task, --model and OPENAI_API_KEY');
     }
-    if (values.db || values.workers) throw new Error('--db and --workers apply to contract checks');
+    if (values.db || values.workers || values.tasks) throw new Error('--db, --workers and --tasks do not apply to code');
     const result = await runCodingAgent({
       root: directory,
       task: values.task,
@@ -89,7 +113,7 @@ async function main(): Promise<number> {
     const verified = !values.check || (lastCheck && !lastCheck.stale && lastCheck.exitCode === 0);
     return result.completed && verified ? 0 : 1;
   }
-  if (values.task !== undefined || values.check !== undefined) throw new Error('--task and --check apply to code');
+  if (values.task !== undefined || values.check !== undefined || values.tasks !== undefined) throw new Error('Coding task options require code or batch');
   if (!['plan', 'run', 'status'].includes(command) || positionals.length > 2) throw new Error('Use plan, run, or status with one workspace');
   if (command !== 'run' && (values.model !== undefined || values.workers !== undefined)) throw new Error('--model and --workers apply to run');
   const workers = Number(values.workers ?? '3');
