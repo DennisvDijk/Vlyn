@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { CapabilityManifest } from './capabilities.ts';
 import { canRun, canWrite, grant } from './capabilities.ts';
 import type { AgentProvider } from './coding-agent.ts';
-import { redact, secretValues } from './sandbox.ts';
+import { redact } from './sandbox.ts';
 
 /** Lines that look like instructions aimed at the model. They stay data. */
 const injection = /ignore (?:all |any )?(?:previous|prior) instructions|you are now |system prompt|do not tell the user|exfiltrate/iu;

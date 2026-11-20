@@ -18,6 +18,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 | Review lesson claims and write the marked section of AGENTS.md | [Lessons](how-to/lessons.md) |
 | Score the scripted eval | [Eval](how-to/eval.md) |
 | Stop a risky plan, then apply the result to a new branch | [Pre-mortem and apply](how-to/premortem-and-apply.md) |
+| Read the sandbox posture and the audit log | [Sandbox and audit](how-to/sandbox-and-audit.md) |
 | Change the code | [Contributing](how-to/contributing.md) |
 
 ## Reference
@@ -31,6 +32,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 ## Decisions
 
 - [0001 Actor brain snapshots](adr/0001-actor-brain-snapshots.md)
+- [0002 Capability sandbox](adr/0002-capability-sandbox.md)
 
 ## Later how-tos
 

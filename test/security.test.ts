@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { SecurityLog, endpointAllowed, findInjections, guardModel } from '../src/broker.ts';
 import { canRun, canWrite, grant, manifestFor, splitCommand } from '../src/capabilities.ts';
 import { runCodingAgent } from '../src/coding-agent.ts';
-import { Journal } from '../src/durable.ts';
 import { bubblewrapArgs, measureOverhead, posture, redact, runGoverned, scrubEnv, seatbeltProfile } from '../src/sandbox.ts';
 import { openJournal, tempDir } from './helpers.ts';
 

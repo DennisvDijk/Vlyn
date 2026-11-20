@@ -237,7 +237,10 @@ export async function runCodingAgent(options: {
           options.onAction?.('Running the requested check');
           const secrets = secretValues(process.env);
           const governed = options.manifest
-            ? await runGoverned({ command: options.check, cwd: root, manifest: options.manifest, requireSandbox: options.requireSandbox })
+            ? await runGoverned({
+              command: options.check, cwd: root, manifest: options.manifest,
+              ...(options.requireSandbox !== undefined ? { requireSandbox: options.requireSandbox } : {}),
+            })
             : undefined;
           const check = governed ?? await runCommand(root, options.check);
           const output = redact(check.output, secrets);

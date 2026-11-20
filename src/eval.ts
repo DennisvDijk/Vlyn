@@ -170,12 +170,14 @@ export async function runEval(): Promise<EvalReport> {
         const outcome: 0 | 1 = result.status === 'completed' ? 1 : 0;
         decisions.score(forecast.id, outcome);
         const lastCheck = result.result?.checks.at(-1);
+        const denied = result.result?.denied?.length ?? 0;
         const honest = result.status === judgeTask({
           completed: Boolean(result.result?.completed),
           checkRequired: Boolean(spec.task.check),
           outOfScope: result.outOfScope ?? [],
           ...(result.error !== undefined ? { error: result.error } : {}),
           ...(lastCheck ? { lastCheck } : {}),
+          ...(denied > 0 ? { denied } : {}),
         });
         reports.push({
           id: spec.id,

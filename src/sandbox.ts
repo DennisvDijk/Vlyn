@@ -137,6 +137,7 @@ export type Launch = {
 
 /** Choose the strongest confinement that is actually present. */
 export function planLaunch(command: string, cwd: string, manifest: CapabilityManifest): Launch {
+  void manifest;
   const tokens = splitCommand(command);
   const nodeCmd = (tokens[0] === 'node' || tokens[0] === 'node.exe') && nodePermissionAvailable();
   const permission = ['--permission', `--allow-fs-read=${cwd}`, `--allow-fs-write=${cwd}`];
