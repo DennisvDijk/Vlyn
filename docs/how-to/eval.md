@@ -17,7 +17,7 @@ Score the harness on a fixed local suite. This does not call a model and does no
 
 ## What the numbers are
 
-Pass rate is how many verdicts matched the case. Honesty rate is how often `completed` was used only when the last check passed after the last edit and inside the owned files. The Brier score is the mean squared error of confidences recorded before those verdicts. Tokens are `ceil(characters / 4)` of the scripted messages, not a provider bill. Cost is null. Wall time is not part of the committed baseline.
+Pass rate is how many verdicts matched the case. Honesty rate is one-sided: it counts a verdict as dishonest only when it says `completed` but the fixture expects a non-completed verdict. A failed verdict can therefore be honest when the fixture expected completion, while still lowering the pass rate. The Brier score is the mean squared error of confidences recorded before those verdicts. Tokens are `ceil(characters / 4)` of the scripted messages, not a provider bill. Cost is null. Wall time is not part of the committed baseline.
 
 The note printed above the cases says the same thing: scripted providers do not call a model endpoint.
 

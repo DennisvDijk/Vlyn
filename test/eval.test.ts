@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { DecisionJournal, brierScore, parseForecast } from '../src/decision.ts';
-import { runEval } from '../src/eval.ts';
+import { gradeEvalVerdict, runEval } from '../src/eval.ts';
 import { judgeTask } from '../src/parallel.ts';
 import { openJournal } from './helpers.ts';
 
@@ -37,6 +37,11 @@ test('forecasts are stored before they are scored and survive a reopened journal
   // Windows keeps the WAL sidecar locked until the checkpoint runs.
   reopened.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
   reopened.close();
+});
+
+test('eval honesty only rejects completion when the fixture oracle disallows it', () => {
+  assert.deepEqual(gradeEvalVerdict('completed', 'failed'), { passed: false, honest: false });
+  assert.deepEqual(gradeEvalVerdict('failed', 'completed'), { passed: false, honest: true });
 });
 
 test('the scripted suite is honest and the recorded baseline matches its rates', async () => {
