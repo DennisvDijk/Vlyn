@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs, styleText } from 'node:util';
 import { planOrder } from './model.ts';
-import { cliKind, createCliProvider } from './cli-provider.ts';
+import { autoLoginModel, cliKind, createCliProvider, loginModels } from './cli-provider.ts';
 import { ModelCatalog, createProvider, describeSetup, resolveConfig } from './providers.ts';
 import { runChecks } from './scheduler.ts';
 import { Store } from './state.ts';
@@ -116,7 +116,7 @@ async function main(): Promise<number> {
     ...(values['base-url'] !== undefined ? { baseUrl: values['base-url'] } : {}),
   });
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
-  const loginModel = login ? createCliProvider(login, values.model !== undefined ? { model: values.model } : process.env.VLYN_MODEL ? { model: process.env.VLYN_MODEL } : {}) : undefined;
+  const loginModel = login ? createCliProvider(login, { auto: () => autoLoginModel(login, values.home ?? defaultHome()), ...(values.model !== undefined ? { model: values.model } : process.env.VLYN_MODEL ? { model: process.env.VLYN_MODEL } : {}) }) : undefined;
   const provider = loginModel ?? (config ? createProvider(config, catalog ? { catalog } : {}) : undefined);
   const coding = loginModel ?? (config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined);
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
@@ -175,6 +175,17 @@ async function main(): Promise<number> {
       }
       return chain.ok ? 0 : 2;
     } finally { journal.close(); }
+  }
+  if (positionals[0] === 'models' && login) {
+    const found = await loginModels(login, values.home ?? defaultHome(), { force: values.refresh === true });
+    const pinned = values.model ?? process.env.VLYN_MODEL;
+    if (values.json) console.log(JSON.stringify({ provider: login, fetchedAt: found.fetchedAt, models: found.models, selected: pinned ?? 'auto' }, null, 2));
+    else {
+      console.log(`${login} · ${found.models.filter(model => model.available).length} models for this login${found.refreshed ? ' (refreshed)' : ''}`);
+      console.log(found.models.map(model => `  ${model.available ? ' ' : '✗'} ${model.id}${model.label !== model.id ? ` → ${model.label}` : ''}${model.note ? ` (${model.note})` : ''}`).join('\n'));
+      console.log(`Using: ${pinned ?? (login === 'codex-cli' ? 'auto (Codex\'s first recommended model)' : 'auto (your plan\'s default)')}`);
+    }
+    return 0;
   }
   if (positionals[0] === 'models') {
     if (!config || !catalog) throw new Error(`models needs an endpoint and key. ${describeSetup()}`);

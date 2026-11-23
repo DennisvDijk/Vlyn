@@ -217,3 +217,5 @@ VLYN_PROVIDER=claude-cli vlyn auto "your goal"   # or codex-cli
 ```
 
 Vlyn runs the official program as a text-only model and never reads or copies its login. The program gets no tools of its own (Claude runs with `--tools ""`, Codex in a read-only sandbox), so Vlyn's own tools, sandbox and checks stay in charge. `--model` or `VLYN_MODEL` is passed through. Native tool calls and streaming are not used in this mode; Vlyn uses its text action format instead.
+
+Models are discovered from the login itself and refreshed automatically (Codex: every 10 minutes from its live catalog; Claude: hourly, by resolving each alias to its newest full name). `VLYN_PROVIDER=codex-cli vlyn models --refresh` shows the list. With no `--model`, Codex uses its first recommended model and Claude uses your plan's default, so new releases are picked up without edits.

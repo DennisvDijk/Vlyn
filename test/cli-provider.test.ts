@@ -31,3 +31,43 @@ test('codex login runs a read-only ephemeral exec and reads the last message', a
   assert.equal(await createCliProvider('codex-cli', { run })([{ role: 'user', content: 'go' }]), 'done');
   assert.ok(args.includes('--ephemeral') && args.includes('read-only'));
 });
+
+test('codex models come from its live catalog, in order, without hidden ones', async () => {
+  const { discoverLoginModels, autoLoginModel } = await import('../src/cli-provider.ts');
+  const run: CliRun = async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ models: [
+    { slug: 'b', display_name: 'B', visibility: 'list', priority: 2 }, { slug: 'h', visibility: 'hide', priority: 0 }, { slug: 'a', display_name: 'A', visibility: 'list', priority: 1 },
+  ] }) });
+  assert.deepEqual((await discoverLoginModels('codex-cli', { run })).map(model => model.id), ['a', 'b']);
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const home = await mkdtemp(join(tmpdir(), 'vlyn-lm-'));
+  try { assert.equal(await autoLoginModel('codex-cli', home, { run }), 'a'); } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+test('claude aliases record the resolved model and mark unusable ones', async () => {
+  const { discoverLoginModels } = await import('../src/cli-provider.ts');
+  const run: CliRun = async (_c, args) => args.includes('fable')
+    ? { code: 1, stderr: '', stdout: JSON.stringify({ is_error: true, result: 'needs credits' }) }
+    : { code: 0, stderr: '', stdout: JSON.stringify({ result: 'ok', modelUsage: { 'claude-x-9': {} } }) };
+  const models = await discoverLoginModels('claude-cli', { run });
+  assert.equal(models.find(model => model.id === 'fable')?.available, false);
+  assert.equal(models.find(model => model.id === 'opus')?.label, 'claude-x-9');
+});
+
+test('a cached list is reused until it is stale, and kept when a refresh fails', async () => {
+  const { loginModels } = await import('../src/cli-provider.ts');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const home = await mkdtemp(join(tmpdir(), 'vlyn-lm-'));
+  let calls = 0;
+  const ok: CliRun = async () => { calls += 1; return { code: 0, stderr: '', stdout: JSON.stringify({ models: [{ slug: 'a', priority: 1 }] }) }; };
+  const broken: CliRun = async () => ({ code: 1, stderr: 'down', stdout: '' });
+  try {
+    assert.equal((await loginModels('codex-cli', home, { run: ok })).refreshed, true);
+    assert.equal((await loginModels('codex-cli', home, { run: ok })).refreshed, false);
+    assert.equal(calls, 1);
+    assert.deepEqual((await loginModels('codex-cli', home, { run: broken, force: true })).models.map(model => model.id), ['a']);
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
