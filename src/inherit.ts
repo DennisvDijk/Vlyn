@@ -44,7 +44,9 @@ export function parseCodexToml(text: string): { modelProvider?: string; model?: 
     if (table) {
       top = false;
       const match = /^model_providers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))$/u.exec(table[1] as string);
-      current = match ? (providers[(match[1] ?? match[2]) as string] ??= {}) : undefined;
+      const name = (match?.[1] ?? match?.[2]) as string | undefined;
+      if (name !== undefined) providers[name] ??= {};
+      current = name === undefined ? undefined : providers[name];
       continue;
     }
     const pair = /^([A-Za-z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"/u.exec(line);
