@@ -48,9 +48,9 @@ export async function completeTurn(input: {
   const env = input.env ?? process.env;
   const mode = apiMode(input.config.kind, input.config.baseUrl, env);
   const effort = reasoningEffort(env);
-  const tools = input.tools === true;
+  let tools = input.tools === true;
+  let toolFallbackUsed = false;
   let attempt = 0;
-  let last: Response | undefined;
   for (;;) {
     if (input.hooks?.signal?.aborted) throw new Error('Model stream aborted');
     const timeout = AbortSignal.timeout(120_000);
@@ -72,14 +72,19 @@ export async function completeTurn(input: {
       continue;
     }
     if (response.ok) return readTurn(mode, response, input.hooks);
+    const detail = (await response.text().catch(() => '')).split(input.config.apiKey).join('[key]').slice(0, 300);
+    const rejectsTools = /\b(?:unsupported\s+)?(?:tools?|functions?|tool[- ]calling|tool[- ]calls?|tool[- ]use|function[- ]calling|function[- ]calls?|function[- ]use)(?:\s+(?:parameter|field|option))?\s+(?:(?:are|is|aren't|isn't)\s+)?(?:not supported|unsupported|not available|unavailable|not allowed)\b|\b(?:does not support|doesn't support|cannot use|can't use)\b.{0,30}\b(?:tools?|functions?|tool[- ]calling|tool[- ]calls?|tool[- ]use|function[- ]calling|function[- ]calls?|function[- ]use)\b/iu.test(detail);
+    if ((response.status === 400 || response.status === 422) && tools && !toolFallbackUsed && rejectsTools && attempt < 2) {
+      tools = false;
+      toolFallbackUsed = true;
+      attempt += 1;
+      continue;
+    }
     if (!shouldRetryStatus(response.status) || attempt >= 2) {
-      const detail = (await response.text().catch(() => '')).split(input.config.apiKey).join('[key]').slice(0, 300);
       throw new Error(`Model request failed (HTTP ${response.status}) for ${input.config.model}${detail ? `: ${detail}` : ''}`);
     }
-    last = response;
     await sleep(backoffMs(attempt, response.headers.get('retry-after')), input.hooks?.signal);
     attempt += 1;
-    void last;
   }
 }
 
