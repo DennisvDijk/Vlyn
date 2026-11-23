@@ -207,3 +207,13 @@ npm test
 ```
 
 CI lints and typechecks once, then tests on Linux, macOS, and Windows for Node 24 (Maintenance LTS) and Node 26 (Active LTS). See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Sign in with Claude or Codex
+
+No API key needed if you already use Claude Code or the Codex CLI. Sign in with that program once (`claude`, or `codex login`), then:
+
+```
+VLYN_PROVIDER=claude-cli vlyn auto "your goal"   # or codex-cli
+```
+
+Vlyn runs the official program as a text-only model and never reads or copies its login. The program gets no tools of its own (Claude runs with `--tools ""`, Codex in a read-only sandbox), so Vlyn's own tools, sandbox and checks stay in charge. `--model` or `VLYN_MODEL` is passed through. Native tool calls and streaming are not used in this mode; Vlyn uses its text action format instead.

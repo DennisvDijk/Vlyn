@@ -4,6 +4,7 @@ import { realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs, styleText } from 'node:util';
 import { planOrder } from './model.ts';
+import { cliKind, createCliProvider } from './cli-provider.ts';
 import { ModelCatalog, createProvider, describeSetup, resolveConfig } from './providers.ts';
 import { runChecks } from './scheduler.ts';
 import { Store } from './state.ts';
@@ -109,13 +110,15 @@ async function main(): Promise<number> {
     console.log(usage);
     return 0;
   }
-  const config = resolveConfig(process.env, {
+  const login = cliKind(process.env.VLYN_PROVIDER);
+  const config = login ? undefined : resolveConfig(process.env, {
     ...(values.model !== undefined ? { model: values.model } : {}),
     ...(values['base-url'] !== undefined ? { baseUrl: values['base-url'] } : {}),
   });
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
-  const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
-  const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined;
+  const loginModel = login ? createCliProvider(login, values.model !== undefined ? { model: values.model } : process.env.VLYN_MODEL ? { model: process.env.VLYN_MODEL } : {}) : undefined;
+  const provider = loginModel ?? (config ? createProvider(config, catalog ? { catalog } : {}) : undefined);
+  const coding = loginModel ?? (config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined);
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
   if (positionals[0] === 'eval') {
     const report = await runEval();

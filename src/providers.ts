@@ -56,7 +56,7 @@ export function resolveConfig(env: NodeJS.ProcessEnv = process.env, flags: { mod
 }
 
 export function describeSetup(): string {
-  return 'Set VLYN_API_KEY (or OPENAI_API_KEY, LITELLM_API_KEY, ANTHROPIC_API_KEY). For a gateway such as LiteLLM also set VLYN_BASE_URL. VLYN_MODEL is optional; without it Vlyn chooses from the live model list.';
+  return 'Set VLYN_API_KEY (or OPENAI_API_KEY, LITELLM_API_KEY, ANTHROPIC_API_KEY). For a gateway such as LiteLLM also set VLYN_BASE_URL. To use a Claude or ChatGPT/Codex login instead of a key, sign in with `claude` or `codex` and set VLYN_PROVIDER=claude-cli or codex-cli. VLYN_MODEL is optional; without it Vlyn chooses from the live model list.';
 }
 
 function headers(config: ProviderConfig): Record<string, string> {
