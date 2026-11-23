@@ -77,6 +77,8 @@ export function judgeTask(input: {
 export async function executeTask(task: CodingTask, worktree: string, provider: AgentProvider, context?: unknown, sandbox?: {
   requireSandbox?: boolean;
   audit?: (event: { action: string; target: string; decision: 'allow' | 'deny'; detail?: string }) => void;
+  signal?: AbortSignal;
+  onDelta?: (delta: string) => void;
 }): Promise<TaskResult> {
   let result: CodingResult | undefined;
   let error: string | undefined;
@@ -90,6 +92,8 @@ export async function executeTask(task: CodingTask, worktree: string, provider: 
       ...(manifest ? { manifest } : {}),
       ...(sandbox?.requireSandbox !== undefined ? { requireSandbox: sandbox.requireSandbox } : {}),
       ...(sandbox?.audit ? { audit: sandbox.audit } : {}),
+      ...(sandbox?.signal ? { signal: sandbox.signal } : {}),
+      ...(sandbox?.onDelta ? { onDelta: sandbox.onDelta } : {}),
     });
   } catch (cause) {
     error = cause instanceof Error ? cause.message : String(cause);

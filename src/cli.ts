@@ -115,7 +115,7 @@ async function main(): Promise<number> {
   });
   const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
   const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
-  const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true }) : undefined;
+  const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
   if (positionals[0] === 'eval') {
     const report = await runEval();
@@ -238,7 +238,7 @@ async function main(): Promise<number> {
       }
       const runner = coding ?? needModel('Running tasks');
       const controller = new AbortController();
-      process.once('SIGINT', () => { controller.abort(); console.error('Finishing running tasks, then stopping. Resume later with: vlyn resume ' + runId.slice(0, 8)); });
+      process.once('SIGINT', () => { controller.abort(); console.error(`Finishing running tasks, then stopping. Resume later with: vlyn resume ${runId.slice(0, 8)}`); });
       const { run, tasks } = await executeRun(journal, runId, {
         provider: () => runner, signal: controller.signal,
         ...(values['require-sandbox'] ? { requireSandbox: true } : {}),

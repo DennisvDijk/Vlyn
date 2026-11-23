@@ -9,6 +9,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 | Install, link the command, and stop before any edit | [Install and first run](how-to/install-and-first-run.md) |
 | OpenAI-compatible endpoints, LiteLLM, Anthropic, Ollama | [Connect a model](how-to/connect-a-model.md) |
 | Use native tool calls, with JSON as the fallback | [Native tools](how-to/native-tools.md) |
+| See which API a coding turn streams | [LLM session](how-to/llm-session.md) |
 | State a goal, edit the plan, let it run | [Run a goal](how-to/run-a-goal.md) |
 | Continue after Ctrl+C, a crash, or a closed terminal | [Resume a run](how-to/resume-a-run.md) |
 | Read diffs and the integration worktree | [Review results](how-to/review-results.md) |
@@ -24,7 +25,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 
 ## Reference
 
-[Commands](reference/commands.md) lists what the binary accepts today. Module roles are in that page's table.
+[Commands](reference/commands.md) lists what the binary accepts today. Module roles are in that page's table. The call-layer comparison is [llm-parity.md](llm-parity.md).
 
 ## Explanation
 

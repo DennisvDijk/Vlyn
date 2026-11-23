@@ -187,6 +187,7 @@ export async function executeRun(journal: Journal, runId: string, options: {
   onEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
   requireSandbox?: boolean;
+  onDelta?: (taskId: string, delta: string) => void;
 }): Promise<{ run: RunRow; tasks: TaskRow[]; convergence?: Convergence }> {
   const run = journal.run(runId);
   if (!run) throw new Error(`No run ${runId}`);
@@ -216,6 +217,8 @@ export async function executeRun(journal: Journal, runId: string, options: {
       say(`Started ${row.task.id}`);
       const result = await executeTask(row.task, row.worktree, options.provider(row.task), spec ? briefFor(spec, row.task, allTasks) : undefined, {
         ...(options.requireSandbox !== undefined ? { requireSandbox: options.requireSandbox } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(options.onDelta ? { onDelta: (delta: string) => options.onDelta?.(row.task.id, delta) } : {}),
         audit: event => security.append({ ...event, runId: run.id, actorId: row.task.id }),
       });
       if (options.signal?.aborted && result.error) {
