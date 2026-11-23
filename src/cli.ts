@@ -4,7 +4,10 @@ import { realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs, styleText } from 'node:util';
 import { planOrder } from './model.ts';
-import { ModelCatalog, createProvider, describeSetup, resolveConfig } from './providers.ts';
+import { autoLoginModel, createCliProvider, loginModels } from './cli-provider.ts';
+import { inheritCredentials } from './inherit.ts';
+import { addProvider, listProviders, loadConfig, selectProvider } from './registry.ts';
+import { ModelCatalog, createProvider, describeSetup } from './providers.ts';
 import { runChecks } from './scheduler.ts';
 import { Store } from './state.ts';
 import type { Report } from './state.ts';
@@ -24,7 +27,7 @@ import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|providers|provider|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   tui          Interactive session: state a goal, review the generated plan, watch agents work
   auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
@@ -101,7 +104,7 @@ async function main(): Promise<number> {
     options: {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
-      tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
+      tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, 'key-env': { type: 'string' }, type: { type: 'string' }, global: { type: 'boolean' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
@@ -109,13 +112,19 @@ async function main(): Promise<number> {
     console.log(usage);
     return 0;
   }
-  const config = resolveConfig(process.env, {
+  const home = values.home ?? defaultHome();
+  const vlynConfig = loadConfig(home, process.cwd());
+  const inherited = process.env.VLYN_NO_INHERIT === '1' ? [] : inheritCredentials();
+  const selection = selectProvider(vlynConfig, process.env, {
     ...(values.model !== undefined ? { model: values.model } : {}),
     ...(values['base-url'] !== undefined ? { baseUrl: values['base-url'] } : {}),
-  });
-  const catalog = config ? new ModelCatalog(config, values.home ?? defaultHome()) : undefined;
-  const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
-  const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined;
+  }, inherited);
+  const login = selection.kind === 'login' ? selection.login : undefined;
+  const config = selection.kind === 'api' ? selection.config : undefined;
+  const catalog = config ? new ModelCatalog(config, home) : undefined;
+  const loginModel = selection.kind === 'login' ? createCliProvider(selection.login, { auto: () => autoLoginModel(selection.login, home), ...(selection.model ? { model: selection.model } : {}) }) : undefined;
+  const provider = loginModel ?? (config ? createProvider(config, catalog ? { catalog } : {}) : undefined);
+  const coding = loginModel ?? (config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined);
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
   if (positionals[0] === 'eval') {
     const report = await runEval();
@@ -172,6 +181,40 @@ async function main(): Promise<number> {
       }
       return chain.ok ? 0 : 2;
     } finally { journal.close(); }
+  }
+  if (positionals[0] === 'providers') {
+    const rows = listProviders(vlynConfig, process.env, inherited);
+    if (values.json) console.log(JSON.stringify({ model: vlynConfig.model ?? null, providers: rows }, null, 2));
+    else {
+      console.log(rows.map(row => `${row.ready ? '✓' : '✗'} ${row.id.padEnd(10)} ${row.type.padEnd(10)} ${row.source.padEnd(9)} ${row.detail}`).join('\n'));
+      console.log(`Default model: ${vlynConfig.model ?? 'none set (use --model provider/model, or add "model" to vlyn.json)'}`);
+    }
+    return 0;
+  }
+  if (positionals[0] === 'provider') {
+    const [, action, id] = positionals;
+    if (action !== 'add' || !id) throw new Error('Usage: vlyn provider add <name> --base-url <url> --key-env <VARIABLE> [--type openai|anthropic] [--model <name>] [--global]');
+    const type = values.type ?? 'openai';
+    if (type !== 'openai' && type !== 'anthropic' && type !== 'claude-cli' && type !== 'codex-cli') throw new Error('--type must be openai, anthropic, claude-cli or codex-cli');
+    const file = values.global ? join(home, 'config.json') : join(process.cwd(), 'vlyn.json');
+    await addProvider(file, id, {
+      type,
+      ...(values['base-url'] ? { baseUrl: values['base-url'] } : {}),
+      ...(values['key-env'] ? { apiKey: `{env:${values['key-env']}}` } : {}),
+    }, values.model ? `${id}/${values.model}` : undefined);
+    console.log(`Saved provider "${id}" in ${file}${values['key-env'] ? ` (key read from $${values['key-env']}, never stored)` : ''}. Try: vlyn models --model ${id}/<model>`);
+    return 0;
+  }
+  if (positionals[0] === 'models' && login) {
+    const found = await loginModels(login, home, { force: values.refresh === true });
+    const pinned = values.model ?? process.env.VLYN_MODEL;
+    if (values.json) console.log(JSON.stringify({ provider: login, fetchedAt: found.fetchedAt, models: found.models, selected: pinned ?? 'auto' }, null, 2));
+    else {
+      console.log(`${login} · ${found.models.filter(model => model.available).length} models for this login${found.refreshed ? ' (refreshed)' : ''}`);
+      console.log(found.models.map(model => `  ${model.available ? ' ' : '✗'} ${model.id}${model.label !== model.id ? ` → ${model.label}` : ''}${model.note ? ` (${model.note})` : ''}`).join('\n'));
+      console.log(`Using: ${pinned ?? (login === 'codex-cli' ? 'auto (Codex\'s first recommended model)' : 'auto (your plan\'s default)')}`);
+    }
+    return 0;
   }
   if (positionals[0] === 'models') {
     if (!config || !catalog) throw new Error(`models needs an endpoint and key. ${describeSetup()}`);
