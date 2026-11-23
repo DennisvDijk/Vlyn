@@ -193,11 +193,11 @@ export function posture(): Isolation {
   return launch.isolation;
 }
 
-function capture(file: string, args: string[], shell: boolean, cwd: string, env: NodeJS.ProcessEnv): Promise<{ exitCode: number | null; output: string }> {
+function capture(file: string, args: string[], shell: boolean, cwd: string, env: NodeJS.ProcessEnv, timeoutMs = 60_000): Promise<{ exitCode: number | null; output: string }> {
   return new Promise(done => {
     const child = shell
-      ? spawn(file, { cwd, env, shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 })
-      : spawn(file, args, { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+      ? spawn(file, { cwd, env, shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs })
+      : spawn(file, args, { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs });
     let output = '';
     const append = (data: Buffer) => { output = (output + data.toString()).slice(-maxOutput); };
     child.stdout?.on('data', append);
@@ -216,6 +216,7 @@ export async function runGoverned(options: {
   manifest: CapabilityManifest;
   env?: NodeJS.ProcessEnv;
   requireSandbox?: boolean;
+  timeoutMs?: number;
 }): Promise<GovernedResult> {
   const env = options.env ?? process.env;
   const launch = planLaunch(options.command, options.cwd, options.manifest);
@@ -225,7 +226,7 @@ export async function runGoverned(options: {
   if (options.requireSandbox && !launch.isolation.isolates) {
     throw new Error(`Refusing ${options.command}: only the in-process gate is available (${launch.isolation.driver}).`);
   }
-  const result = await capture(launch.file, launch.args, launch.shell, options.cwd, scrubEnv(env));
+  const result = await capture(launch.file, launch.args, launch.shell, options.cwd, scrubEnv(env), options.timeoutMs);
   return { command: options.command, ...result, isolation: launch.isolation };
 }
 
