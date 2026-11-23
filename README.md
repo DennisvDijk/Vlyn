@@ -219,3 +219,25 @@ VLYN_PROVIDER=claude-cli vlyn auto "your goal"   # or codex-cli
 Vlyn runs the official program as a text-only model and never reads or copies its login. The program gets no tools of its own (Claude runs with `--tools ""`, Codex in a read-only sandbox), so Vlyn's own tools, sandbox and checks stay in charge. `--model` or `VLYN_MODEL` is passed through. Native tool calls and streaming are not used in this mode; Vlyn uses its text action format instead.
 
 Models are discovered from the login itself and refreshed automatically (Codex: every 10 minutes from its live catalog; Claude: hourly, by resolving each alias to its newest full name). `VLYN_PROVIDER=codex-cli vlyn models --refresh` shows the list. With no `--model`, Codex uses its first recommended model and Claude uses your plan's default, so new releases are picked up without edits.
+
+## Providers
+
+Choose a model as `provider/model`: `vlyn auto --model claude/opus`, `--model codex/gpt-6.2-sol`, `--model acme/qwen3-coder`. Built in, with nothing to set up: `claude` and `codex` (your logins), `openai`, `anthropic`, `litellm`. List them with `vlyn providers`.
+
+**Keys are inherited, so you don't need environment variables.** Vlyn reuses what your other tools already hold: Claude Code's `env` and `apiKeyHelper` in `~/.claude/settings.json` (and the project's `.claude/settings*.json`, where a gateway's `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` live), Codex's `model_provider` in `~/.codex/config.toml`, and opencode's saved keys. Order: the provider's own `apiKey`, then environment variables, then inherited settings. ChatGPT-login tokens are never used as API keys. `VLYN_NO_INHERIT=1` turns this off.
+
+To define your own, add one block to `vlyn.json` in the project, or `config.json` in `~/.vlyn` for all projects (comments allowed), or run `vlyn provider add acme --base-url https://llm.acme.example/v1 --key-env ACME_KEY --model qwen3-coder`:
+
+```jsonc
+{
+  "model": "acme/qwen3-coder",
+  "providers": {
+    "acme": {
+      "type": "openai",                       // openai (default), anthropic, claude-cli, codex-cli
+      "baseUrl": "https://llm.acme.example/v1",
+      "apiKey": "{file:~/.secrets/acme}",     // or {env:NAME}; never has to be written here
+      "headers": { "X-Team": "ai" }
+    }
+  }
+}
+```

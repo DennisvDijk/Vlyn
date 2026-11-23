@@ -13,14 +13,18 @@ export type SessionConfig = {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Extra headers from the provider's config, such as a gateway's team or routing header. */
+  headers?: Record<string, string>;
+  bearer?: boolean;
 };
 
 type Fetch = typeof fetch;
 
 function headers(config: SessionConfig): Record<string, string> {
-  return config.kind === 'anthropic'
+  const base: Record<string, string> = config.kind === 'anthropic' && !config.bearer
     ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
     : { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' };
+  return { ...config.headers, ...(config.kind === 'anthropic' ? { 'anthropic-version': '2023-06-01' } : {}), ...base };
 }
 
 function endpoint(config: SessionConfig, mode: ApiMode): string {

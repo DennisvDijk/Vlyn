@@ -22,6 +22,10 @@ export type ProviderConfig = {
   model: string;
   /** Environment variable the key came from, for messages. */
   keyName: string;
+  /** Extra request headers from the provider's config. */
+  headers?: Record<string, string>;
+  /** Send the key as a Bearer token even for Anthropic's API (gateways using ANTHROPIC_AUTH_TOKEN). */
+  bearer?: boolean;
 };
 type Fetch = typeof fetch;
 
@@ -60,9 +64,10 @@ export function describeSetup(): string {
 }
 
 function headers(config: ProviderConfig): Record<string, string> {
-  return config.kind === 'anthropic'
+  const base: Record<string, string> = config.kind === 'anthropic' && !config.bearer
     ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
     : { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' };
+  return { ...config.headers, ...(config.kind === 'anthropic' ? { 'anthropic-version': '2023-06-01' } : {}), ...base };
 }
 
 function redact(text: string, config: ProviderConfig): string {
@@ -298,7 +303,7 @@ export function createProvider(config: ProviderConfig, options: { catalog?: Mode
     provider.turn = async (messages, hooks) => {
       const model = await resolve();
       const turn = await completeTurn({
-        config: { kind: config.kind, baseUrl: config.baseUrl, apiKey: config.apiKey, model },
+        config: { kind: config.kind, baseUrl: config.baseUrl, apiKey: config.apiKey, model, ...(config.headers ? { headers: config.headers } : {}), ...(config.bearer ? { bearer: true } : {}) },
         messages, tools, request,
         ...(hooks ? { hooks } : {}),
       });
