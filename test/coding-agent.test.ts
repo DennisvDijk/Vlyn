@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { runCodingAgent } from '../src/coding-agent.ts';
+import type { ModelTurn } from '../src/llm/types.ts';
 
 test('coding loop inspects a project, edits a file and runs the requested check', async context => {
   const root = await mkdtemp(join(tmpdir(), 'coding-loop-'));
@@ -34,6 +35,55 @@ test('coding loop inspects a project, edits a file and runs the requested check'
   assert.deepEqual(result.graph.edges.map(edge => edge.kind), ['read', 'read', 'edited', 'ran']);
   assert.ok(result.graph.nodes.some(node => node.kind === 'file' && node.label === 'value.txt'));
 });
+
+test('native tool calls run edits before checks in the same turn', async context => {
+  const root = await mkdtemp(join(tmpdir(), 'coding-turn-order-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'value.txt'), 'before');
+  const turns: ModelTurn[] = [
+    toolTurn([
+      { id: 'edit', name: 'replace', arguments: { path: 'value.txt', old: 'before', new: 'after' } },
+      { id: 'check', name: 'check', arguments: {} },
+    ]),
+    toolTurn([{ id: 'finish', name: 'finish', arguments: { summary: 'Updated and checked.' } }]),
+  ];
+  const provider = Object.assign(async () => '', { turn: async () => turns.shift() ?? toolTurn([]) });
+  const result = await runCodingAgent({
+    root, task: 'Update the value', check: 'node -e "process.stdout.write(require(\'node:fs\').readFileSync(\'value.txt\', \'utf8\'))"', provider,
+  });
+  assert.equal(result.checks[0]?.output, 'after');
+  assert.equal(result.checks[0]?.stale, false);
+  assert.equal(result.completed, true);
+});
+
+test('a native check becomes stale when a later tool in its turn edits a file', async context => {
+  const root = await mkdtemp(join(tmpdir(), 'coding-turn-order-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'value.txt'), 'before');
+  const turns: ModelTurn[] = [
+    toolTurn([
+      { id: 'check', name: 'check', arguments: {} },
+      { id: 'edit', name: 'replace', arguments: { path: 'value.txt', old: 'before', new: 'after' } },
+    ]),
+    toolTurn([{ id: 'finish', name: 'finish', arguments: { summary: 'Updated after checking.' } }]),
+  ];
+  const provider = Object.assign(async () => '', { turn: async () => turns.shift() ?? toolTurn([]) });
+  const result = await runCodingAgent({
+    root, task: 'Update the value',
+    check: 'node -e "const fs=require(\'node:fs\');const value=fs.readFileSync(\'value.txt\',\'utf8\');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);process.stdout.write(value)"',
+    provider,
+  });
+  assert.equal(result.checks[0]?.output, 'before');
+  assert.equal(result.checks[0]?.stale, true);
+  assert.equal(await readFile(join(root, 'value.txt'), 'utf8'), 'after');
+});
+
+function toolTurn(calls: { id: string; name: string; arguments: Record<string, unknown> }[]): ModelTurn {
+  return {
+    text: '', toolCalls: calls.map(call => ({ ...call, argumentsText: JSON.stringify(call.arguments) })),
+    reasoning: [], outputItems: [], usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0, costUsd: null }, incomplete: false,
+  };
+}
 
 test('project boundaries, ambiguous edits, and checks after edits are explicit', async context => {
   const root = await mkdtemp(join(tmpdir(), 'coding-loop-'));
