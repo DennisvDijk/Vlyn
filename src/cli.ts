@@ -147,12 +147,16 @@ async function main(): Promise<number> {
       const found = positionals[1] ? journal.run(positionals[1]) : journal.runs()[0];
       if (!found) throw new Error('No matching run.');
       if (positionals[0] === 'converge') {
-        const result = await converge(journal, found.id);
+        const result = await converge(journal, found.id, {
+          ...(values['require-sandbox'] ? { requireSandbox: true } : {}),
+        });
         console.log(values.json ? JSON.stringify(result, null, 2) : `integration ${result.passed ? 'passed' : 'failed'} · ${result.applied.length} applied · ${result.conflicts.length} conflicts`);
         return result.passed ? 0 : 1;
       }
       if (!values.branch) throw new Error('apply requires --branch NAME');
-      const applied = await applyToBranch(journal, found.id, values.branch);
+      const applied = await applyToBranch(journal, found.id, values.branch, {
+        ...(values['require-sandbox'] ? { requireSandbox: true } : {}),
+      });
       console.log(`${applied.branch} ${applied.commit.slice(0, 8)}`);
       return 0;
     } finally { journal.close(); }

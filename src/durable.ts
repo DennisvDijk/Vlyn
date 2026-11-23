@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { cp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -11,6 +10,8 @@ import { executeTask, gitOutput } from './parallel.ts';
 import type { CodingTask, TaskResult } from './parallel.ts';
 import { afterAction } from './premortem.ts';
 import { briefFor } from './planner.ts';
+import { manifestFor } from './capabilities.ts';
+import { runGoverned } from './sandbox.ts';
 import type { Spec } from './planner.ts';
 
 export type RunStatus = 'planned' | 'running' | 'interrupted' | 'finished';
@@ -236,8 +237,10 @@ export async function executeRun(journal: Journal, runId: string, options: {
   journal.setRun(run.id, done ? 'finished' : 'interrupted');
   say(done ? 'Run finished' : 'Run interrupted; resume it to continue');
   let convergence = journal.convergence(run.id);
-  if (done && !convergence && tasks.filter(task => task.status === 'completed').length > 1) {
-    convergence = await converge(journal, run.id);
+  if (done && ((options.requireSandbox && convergence) || (!convergence && tasks.filter(task => task.status === 'completed').length > 1))) {
+    convergence = await converge(journal, run.id, {
+      ...(options.requireSandbox !== undefined ? { requireSandbox: options.requireSandbox } : {}),
+    });
     say(convergence.passed ? 'Integration: all results combine cleanly and checks pass' : `Integration: ${convergence.conflicts.length} conflicts, ${convergence.checks.filter(check => check.exitCode !== 0).length} failing checks`);
   }
   if (done) {
@@ -251,24 +254,12 @@ export async function executeRun(journal: Journal, runId: string, options: {
   return { run: journal.run(run.id) as RunRow, tasks, ...(convergence ? { convergence } : {}) };
 }
 
-function shell(cwd: string, command: string): Promise<{ exitCode: number | null; output: string }> {
-  return new Promise(done => {
-    const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 });
-    let output = '';
-    const append = (data: Buffer) => { output = (output + data.toString()).slice(-4000); };
-    child.stdout.on('data', append);
-    child.stderr.on('data', append);
-    child.once('error', error => done({ exitCode: null, output: error.message }));
-    child.once('close', exitCode => done({ exitCode, output }));
-  });
-}
-
 /**
  * Convergence: apply every completed task's result onto a fresh copy of the base revision, report conflicts, and re-run
  * the tasks' checks on the combined result. Parallel agents each passed alone; this shows whether the whole holds together.
  * The combined worktree is left in place for review. The original checkout is never changed.
  */
-export async function converge(journal: Journal, runId: string): Promise<Convergence> {
+export async function converge(journal: Journal, runId: string, options: { requireSandbox?: boolean } = {}): Promise<Convergence> {
   const run = journal.run(runId);
   if (!run) throw new Error(`No run ${runId}`);
   const worktree = join(run.directory, '_integration');
@@ -301,8 +292,15 @@ export async function converge(journal: Journal, runId: string): Promise<Converg
   }
   const commands = [...new Set(done.map(row => row.task.check).filter((command): command is string => Boolean(command)))];
   for (const command of commands) {
-    const outcome = await shell(worktree, command);
-    result.checks.push({ command, ...outcome });
+    try {
+      const outcome = await runGoverned({
+        command, cwd: worktree, manifest: manifestFor(worktree, { check: command }), timeoutMs: 300_000,
+        ...(options.requireSandbox !== undefined ? { requireSandbox: options.requireSandbox } : {}),
+      });
+      result.checks.push({ command, exitCode: outcome.exitCode, output: outcome.output });
+    } catch (error) {
+      result.checks.push({ command, exitCode: null, output: error instanceof Error ? error.message : String(error) });
+    }
   }
   result.passed = result.conflicts.length === 0 && result.applied.length > 0 && result.checks.every(check => check.exitCode === 0);
   journal.db.prepare('INSERT OR REPLACE INTO convergence (run_id, result) VALUES (?, ?)').run(run.id, JSON.stringify(result));
@@ -313,7 +311,7 @@ export async function converge(journal: Journal, runId: string): Promise<Converg
  * Commit the integration worktree and point a new branch at that commit.
  * The checkout's HEAD and branch are not changed.
  */
-export async function applyToBranch(journal: Journal, runId: string, branch: string): Promise<{ branch: string; commit: string }> {
+export async function applyToBranch(journal: Journal, runId: string, branch: string, options: { requireSandbox?: boolean } = {}): Promise<{ branch: string; commit: string }> {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,80}$/u.test(branch) || branch.includes('..') || branch.endsWith('/') || branch.endsWith('.lock')) {
     throw new Error('Branch name must be a simple git ref without ".."');
   }
@@ -323,7 +321,7 @@ export async function applyToBranch(journal: Journal, runId: string, branch: str
   const beforeBranch = (await gitOutput(run.root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
   const exists = await gitOutput(run.root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
   if (exists) throw new Error(`Branch ${branch} already exists`);
-  const convergence = journal.convergence(run.id) ?? await converge(journal, run.id);
+  const convergence = (options.requireSandbox ? undefined : journal.convergence(run.id)) ?? await converge(journal, run.id, options);
   if (!convergence.passed) throw new Error('Integration did not pass. Nothing was applied.');
   if ((await gitOutput(convergence.worktree, ['status', '--porcelain'])).trim()) {
     await gitOutput(convergence.worktree, ['add', '-A']);
