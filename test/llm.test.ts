@@ -118,6 +118,62 @@ test('a 429 SSE response is retried and an aborted signal is not', async () => {
   }), /aborted/u);
 });
 
+test('streaming retries an explicit unsupported-tools response without tools', async () => {
+  const text = '{"action":"finish","summary":"ok"}';
+  const cases = [
+    { kind: 'openai' as const, baseUrl: 'https://gateway.example/v1', env: { VLYN_OPENAI_API: 'chat' }, success: { choices: [{ message: { content: text } }] } },
+    { kind: 'openai' as const, baseUrl: 'https://api.openai.com/v1', env: {}, success: { output: [{ type: 'message', content: text }] } },
+    { kind: 'anthropic' as const, baseUrl: 'https://api.anthropic.com/v1', env: {}, success: { content: [{ type: 'text', text }] } },
+  ];
+  for (const config of cases) {
+    const bodies: Record<string, unknown>[] = [];
+    const request = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (bodies.length === 1) return Response.json({ error: { message: 'tools are not supported by this model' } }, { status: 422 });
+      return Response.json(config.success);
+    }) as typeof fetch;
+    const turn = await completeTurn({
+      config: { kind: config.kind, baseUrl: config.baseUrl, apiKey: 'key', model: 'fixture' },
+      messages: [{ role: 'user', content: 'go' }], tools: true, request, env: config.env,
+    });
+    assert.equal(turn.text, text);
+    assert.equal(bodies.length, 2);
+    assert.ok(Array.isArray(bodies[0]?.tools));
+    assert.equal(bodies[1]?.tools, undefined);
+  }
+});
+
+test('tool fallback shares the three-request budget with transient retries', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const request = (async (_url: string | URL | Request, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    if (bodies.length === 1) return Response.json({ error: { message: 'busy' } }, { status: 429, headers: { 'retry-after': '0' } });
+    if (bodies.length === 2) return Response.json({ error: { message: 'tools are not supported' } }, { status: 422 });
+    return Response.json({});
+  }) as typeof fetch;
+  await completeTurn({
+    config: { kind: 'openai', baseUrl: 'https://gateway.example/v1', apiKey: 'key', model: 'fixture' },
+    messages: [{ role: 'user', content: 'go' }], tools: true, request, env: { VLYN_OPENAI_API: 'chat' },
+  });
+  assert.equal(bodies.length, 3);
+  assert.ok(Array.isArray(bodies[0]?.tools));
+  assert.ok(Array.isArray(bodies[1]?.tools));
+  assert.equal(bodies[2]?.tools, undefined);
+});
+
+test('an unrelated 400 does not trigger a tools fallback', async () => {
+  let requests = 0;
+  const request = (async () => {
+    requests += 1;
+    return Response.json({ error: { message: 'The requested model is unavailable; available tools are listed in its capabilities.' } }, { status: 400 });
+  }) as typeof fetch;
+  await assert.rejects(completeTurn({
+    config: { kind: 'openai', baseUrl: 'https://gateway.example/v1', apiKey: 'key', model: 'fixture' },
+    messages: [{ role: 'user', content: 'go' }], tools: true, request, env: { VLYN_OPENAI_API: 'chat' },
+  }), /HTTP 400/u);
+  assert.equal(requests, 1);
+});
+
 test('old tool output is truncated and compacted before the next call', () => {
   assert.ok(truncateToolResult({ content: 'x'.repeat(9000) }).includes('truncated'));
   const messages: AgentMessage[] = [
