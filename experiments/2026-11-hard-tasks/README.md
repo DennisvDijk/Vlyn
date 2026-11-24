@@ -34,7 +34,7 @@ vlyn judge --tasks experiments/2026-11-hard-tasks/tasks.example.json --agents cl
 # 2. Run it. --execute is required to spend anything. --budget is a counted-spend threshold in US dollars, not a provider spending cap.
 vlyn judge --tasks experiments/2026-11-hard-tasks/tasks.example.json \
   --agents claude,codex,pi --runs 3 --budget 25 \
-  --baseline "<verifier command that prints JSON>" --execute
+  --baseline "<verifier command that prints JSON>" --baseline-dir /path/to/verifier --execute
 
 # 3. Report, in the format of docs/VALIDATION.md.
 vlyn report --out experiments/2026-11-hard-tasks/report.md
@@ -44,5 +44,5 @@ Notes:
 
 - `--budget` is in US dollars (conservative against the €25 cap). A run that reports no cost (Codex, Pi) counts as 1 USD, as an accounting estimate. Pass the counted amount from earlier attempts with `--prior-spend USD`. The next run may exceed the threshold, and interrupted runs can have unknown costs; use provider-side limits for a real spending cap.
 - Runs go repetition by repetition across all tasks and agents, so a budget stop leaves the coverage even.
-- `--baseline` is optional and skipped when the command is not installed. It runs in the sandbox, and only a JSON verdict is read from its output.
+- `--baseline` is optional and skipped when the command is not installed. It runs in the sandbox, and only a JSON verdict is read from its output. If it is outside system paths, `--baseline-dir` makes the specified verifier directory available read-only; keep credentials and held-out tests outside it.
 - The rules need at least 20 "done" claims with an accept outcome. With fewer, the report says "not enough data" and applies no rule.

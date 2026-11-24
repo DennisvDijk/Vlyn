@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { realpath, stat } from 'node:fs/promises';
+import { isAbsolute, parse, relative } from 'node:path';
 import { manifestFor, splitCommand } from '../capabilities.ts';
 import { runGoverned } from '../sandbox.ts';
 
@@ -40,14 +42,26 @@ export function parseBaseline(output: string): 0 | 1 | undefined {
 
 export type BaselineOutcome = { p: 0 | 1 | undefined; reason?: string };
 
-export async function runBaseline(command: string, worktree: string, requireSandbox: boolean): Promise<BaselineOutcome> {
+export async function runBaseline(command: string, worktree: string, requireSandbox: boolean, baselineDir?: string): Promise<BaselineOutcome> {
   if (!baselineInstalled(command)) return { p: undefined, reason: 'not installed' };
   try {
+    const dir = baselineDir ? await realpath(baselineDir) : undefined;
+    if (dir) {
+      const root = await realpath(worktree);
+      const contains = (parent: string, child: string) => {
+        const rel = relative(parent, child);
+        return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+      };
+      if (dir === parse(dir).root || !(await stat(dir)).isDirectory() || contains(dir, root) || contains(root, dir)) {
+        return { p: undefined, reason: 'baseline directory must be separate from the worktree and not a filesystem root' };
+      }
+    }
     const result = await runGoverned({
       command,
       cwd: worktree,
       manifest: manifestFor(worktree, { check: command }),
       requireSandbox,
+      ...(dir ? { readOnlyDirs: [dir] } : {}),
     });
     if (result.exitCode === null) return { p: undefined, reason: 'could not start' };
     const p = parseBaseline(result.output);

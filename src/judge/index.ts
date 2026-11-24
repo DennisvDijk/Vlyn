@@ -257,7 +257,7 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
     }
     let pBaseline: number | undefined;
     if (options.baseline?.trim()) {
-      pBaseline = crashed ? 0 : (await runBaseline(options.baseline, worktree, requireSandbox)).p;
+      pBaseline = crashed ? 0 : (await runBaseline(options.baseline, worktree, requireSandbox, options.baselineDir)).p;
     }
     predictions = {
       ...(pSelf === undefined ? {} : { self: pSelf }),

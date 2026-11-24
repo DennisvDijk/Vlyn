@@ -87,6 +87,7 @@ const usage = `Usage: vlyn <judge|calibration|report|tui|auto|resume|runs|actors
   --budget USD With judge --tasks: counted-spend threshold, not a provider spending cap; required with --execute
   --prior-spend USD Counted spend from earlier attempts; defaults to 0
   --baseline C With judge: external verifier command for the baseline predictor (JSON verdict only)
+  --baseline-dir D  With judge: verifier installation directory, mounted read-only outside the worktree
   --execute    With judge --tasks: really run. Without it the plan is printed and nothing runs
   --out PATH   With report: write the markdown to a file
   --accept CMD With judge: held-out acceptance check, run only after the predictions are written; only pass or fail is kept
@@ -131,7 +132,7 @@ async function main(): Promise<number> {
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' },
-      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, agents: { type: 'string' }, runs: { type: 'string' }, budget: { type: 'string' }, 'prior-spend': { type: 'string' }, baseline: { type: 'string' }, execute: { type: 'boolean' }, out: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, agents: { type: 'string' }, runs: { type: 'string' }, budget: { type: 'string' }, 'prior-spend': { type: 'string' }, baseline: { type: 'string' }, 'baseline-dir': { type: 'string' }, execute: { type: 'boolean' }, out: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -174,6 +175,7 @@ async function main(): Promise<number> {
         file, directory, agents, runs, budgetUsd: Number(values.budget ?? 0),
         priorSpendUsd: Number(values['prior-spend'] ?? 0),
         ...(values.baseline ? { baseline: values.baseline } : {}),
+        ...(values['baseline-dir'] ? { baselineDir: values['baseline-dir'] } : {}),
         ...(values.timeout ? { timeoutMs: parseDuration(values.timeout) as number } : {}),
         ...(values.home ? { home: values.home } : {}),
         requireSandbox: !values['no-require-sandbox'],
@@ -204,6 +206,7 @@ async function main(): Promise<number> {
         allowNoop: values['allow-noop'] ?? false,
         accept: values.accept,
         baseline: values.baseline,
+        baselineDir: values['baseline-dir'],
         acceptDir: values['accept-dir'],
         requireSandbox: !values['no-require-sandbox'],
         home: values.home,
