@@ -30,7 +30,7 @@ Nothing below has been run. Needs: the agents installed and signed in, and a key
 # 1. See the plan. Runs nothing, costs nothing.
 vlyn judge --tasks experiments/2026-11-hard-tasks/tasks.example.json --agents claude,codex,pi --runs 3 --budget 25
 
-# 2. Run it. --execute is required to spend anything. --budget is a hard cap in US dollars.
+# 2. Run it. --execute is required to spend anything. --budget is a counted-spend threshold in US dollars, not a provider spending cap.
 vlyn judge --tasks experiments/2026-11-hard-tasks/tasks.example.json \
   --agents claude,codex,pi --runs 3 --budget 25 \
   --baseline "<verifier command that prints JSON>" --execute
@@ -41,7 +41,7 @@ vlyn report --out experiments/2026-11-hard-tasks/report.md
 
 Notes:
 
-- `--budget` is in US dollars (conservative against the €25 cap). A run that reports no cost (Codex, Pi) counts as 1 USD, so the cap still bounds the spend. Runs stop before the cap would be passed.
+- `--budget` is in US dollars (conservative against the €25 cap). A run that reports no cost (Codex, Pi) counts as 1 USD, as an accounting estimate. Pass the counted amount from earlier attempts with `--prior-spend USD`. The next run may exceed the threshold, and interrupted runs can have unknown costs; use provider-side limits for a real spending cap.
 - Runs go repetition by repetition across all tasks and agents, so a budget stop leaves the coverage even.
 - `--baseline` is optional and skipped when the command is not installed. It runs in the sandbox, and only a JSON verdict is read from its output.
 - The rules need at least 20 "done" claims with an accept outcome. With fewer, the report says "not enough data" and applies no rule.

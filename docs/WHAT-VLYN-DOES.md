@@ -52,7 +52,7 @@ What to see in it:
 - **It is honest about itself.** The first measurement (23 Nov 2026, 40 runs on easy tasks) found no gap: "done" was right 35 of 35 times, and Vlyn's own probability was worse than the agent's. That is in the README. The decision rules for the hard-task run were fixed before it, and one outcome is that the instrument lapses ([VALIDATION.md](VALIDATION.md)).
 - **It borrows instead of building.** It is not a harness, a router or a generic verifier. It drives the agent you already have.
 - **Small and auditable.** TypeScript, no runtime dependencies, one SQLite journal, a hash-chained log you can verify (`vlyn audit`).
-- **Cheap to keep honest.** Measuring many tasks costs nothing until you pass `--execute`, and `--budget` is a hard cap.
+- **Cheap to keep honest.** Measuring many tasks costs nothing until you pass `--execute`, and `--budget` sets a counted-spend threshold, though actual provider costs can exceed it.
 
 ## What it does not do yet
 

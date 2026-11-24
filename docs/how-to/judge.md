@@ -83,7 +83,7 @@ Predictions and outcomes are rows in `predictions` and `outcomes` and also in th
 
 ## Measure many tasks: `--tasks` and `report`
 
-`vlyn judge --tasks tasks.json --agents claude,codex,pi --runs 3 --budget 25 --execute` runs every task with every agent, N times, each in a fresh repository built from the task's `fixture` or `repo` + `commit`. Without `--execute` it prints the plan and runs nothing. The budget (US dollars) is a hard cap: runs that report no cost count as 1 USD. See [experiments/2026-11-hard-tasks](../../experiments/2026-11-hard-tasks/README.md) for the format and commands.
+`vlyn judge --tasks tasks.json --agents claude,codex,pi --runs 3 --budget 25 --execute` runs every task with every agent, N times, each in a fresh repository built from the task's `fixture` or `repo` + `commit`. Without `--execute` it prints the plan and runs nothing. The budget is a counted-spend threshold in US dollars, not a provider spending cap. Runs without reported cost count as 1 USD; include earlier attempts explicitly with `--prior-spend USD`. A run can exceed the threshold and interrupted runs may have unknown costs. See [experiments/2026-11-hard-tasks](../../experiments/2026-11-hard-tasks/README.md) for the format and commands.
 
 `--baseline CMD` also runs an existing verifier as an external command in the sandbox and records its JSON verdict as the predictor `baseline`. If the command is not installed, or prints no readable verdict, the baseline is skipped.
 

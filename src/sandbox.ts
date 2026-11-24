@@ -78,7 +78,7 @@ export function scrubEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(env)) {
     if (value === undefined) continue;
-    if (name === 'NODE_OPTIONS' || name === 'NODE_REPL_EXTERNAL_MODULE') continue;
+    if (name === 'NODE_OPTIONS' || name === 'NODE_REPL_EXTERNAL_MODULE' || name === 'NODE_TEST_CONTEXT') continue;
     if (secretName.test(name)) continue;
     next[name] = value;
   }
