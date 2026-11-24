@@ -1,0 +1,1 @@
+Implement compareSemver(a, b) in src/index.js following Semantic Versioning 2.0.0 precedence rules, including pre-release identifiers (e.g. 1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-beta < 1.0.0). Build metadata (+...) is ignored. Return -1, 0 or 1.

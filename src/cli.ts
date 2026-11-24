@@ -26,25 +26,25 @@ import type { GraphFormat } from './tools.ts';
 
 const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
-  tui          Interactive session: state a goal, review the generated plan, watch agents work
-  auto         Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
-  resume       Continue an interrupted run by id (survives crashes, closed terminals and reboots)
-  runs         List durable runs
-  actors       List journaled actors (planner, coder, reviewer, verifier, supervisor)
+  tui          (frozen) Interactive session: state a goal, review the generated plan, watch agents work
+  auto         (frozen) Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
+  resume       (frozen) Continue an interrupted run by id (survives crashes, closed terminals and reboots)
+  runs         (frozen) List durable runs
+  actors       (frozen) List journaled actors (planner, coder, reviewer, verifier, supervisor)
   lessons      Distill repeated failures into claims. --apply writes the marked section of AGENTS.md
   eval         Score a scripted local suite: pass rate, verdict honesty, Brier score. No network
   converge     Rebuild the integration worktree for a finished run and re-run its checks
   apply        Commit that integration onto a new branch (--branch NAME). Does not check out the branch
   audit        Show the capability audit for a run (actor, action, allow or deny)
   models       List the models your key can use; refreshed from the endpoint
-  code         Work on a coding task in a project
-  batch        Run independent coding tasks in isolated Git worktrees
+  code         (frozen) Work on a coding task in a project
+  batch        (frozen) Run independent coding tasks in isolated Git worktrees
   graph        Static import graph of a project: cycles, unresolved imports, mermaid or dot output
   impact       Files and tests affected by a change (--file PATH, repeatable, or --since REV)
   doctor       Check Node, Git and API key readiness
-  plan         Discover deployed consumer versions and record the current inputs
-  run          Check ready consumer versions in parallel
-  status       Read the last observed snapshot and its evidence
+  plan         (frozen) Discover deployed consumer versions and record the current inputs
+  run          (frozen) Check ready consumer versions in parallel
+  status       (frozen) Read the last observed snapshot and its evidence
 
   --db PATH    SQLite file (default: .rehearsal.sqlite in the workspace)
   --workers N  Concurrent checks (default: 3)

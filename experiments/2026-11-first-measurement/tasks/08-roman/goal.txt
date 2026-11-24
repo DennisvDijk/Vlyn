@@ -1,0 +1,1 @@
+Implement toRoman(n) in src/index.js for integers 1..3999 using standard subtractive notation (4 = IV, 9 = IX, 40 = XL, 90 = XC, 400 = CD, 900 = CM). Throw a RangeError for non-integers or values outside 1..3999.

@@ -1,6 +1,6 @@
 # Vlyn documentation
 
-Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why. The handoff for the next session is [STATE.md](STATE.md).
+Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why. The handoff for the next session is [STATE.md](STATE.md). The plan is [ROADMAP.md](ROADMAP.md). Vlyn is a measurement instrument for trust in coding agents first; the earlier harness is [frozen](FROZEN.md).
 
 ## How-to
 
@@ -31,10 +31,18 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 
 [Research note](research/state-of-the-art.md). Memory, judgment, and confinement are analogies for how a coding run plans, remembers, and trusts a check. It is not a how-to.
 
+## Design and validation
+
+- [Design of `vlyn judge`](design/judge.md)
+- [Validation: first measurement, plan and decision rules](VALIDATION.md)
+- [Frozen modules](FROZEN.md)
+- [Motivation and control: from brain to harness](research/motivation-and-control.md)
+
 ## Decisions
 
 - [0001 Actor brain snapshots](adr/0001-actor-brain-snapshots.md)
 - [0002 Capability sandbox](adr/0002-capability-sandbox.md)
+- [0003 Measure first](adr/0003-measurement-first.md)
 
 ## Later how-tos
 

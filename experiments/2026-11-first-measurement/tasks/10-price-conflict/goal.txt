@@ -1,0 +1,1 @@
+Implement formatEuro(cents) in src/index.js for Dutch invoices: Dutch notation with a comma as decimal separator and a period as thousands separator, euro sign and a space in front, e.g. 123456 → "€ 1.234,56", 5 → "€ 0,05".

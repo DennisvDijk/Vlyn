@@ -4,6 +4,8 @@ Vlyn plans a change, edits code in isolated copies of a repository, and accepts 
 
 Every mechanism names the coding outcome it is for and how that outcome is measured. A live model is not part of CI. Scripted replies measure the harness. They do not measure a model.
 
+The motivation and control loops (dopamine, basal ganglia, ACC, locus coeruleus, prefrontal cortex) are in [motivation-and-control.md](motivation-and-control.md).
+
 Competitor products are a constraint, not a template. The short section after the map says what Vlyn deliberately does not copy. The rest of the document is the research the mechanisms are answerable to.
 
 ## Mechanism map

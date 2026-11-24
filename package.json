@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "A standalone coding agent harness: goals become parallel tasks, each with its own worktree and dependency graph.",
+  "description": "A measurement instrument for trust in coding agents: runs an existing agent in a worktree and returns a verdict plus a probability checked against held-out tests.",
   "type": "module",
   "engines": {
     "node": ">=24.12.0"

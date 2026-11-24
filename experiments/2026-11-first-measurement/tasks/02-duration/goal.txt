@@ -1,0 +1,1 @@
+Implement parseDuration(s) in src/index.js: parse strings like "1h30m", "90s", "2h", "1h2m3s" into total seconds. Units h, m, s may each appear at most once, in that order. Throw an Error for anything else (empty string, unknown unit, wrong order, no number).
