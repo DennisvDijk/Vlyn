@@ -295,7 +295,7 @@ test('codex adapter reads commands, edits and the final message file', async (co
     ['command', 'edit', 'text', 'finish'],
   );
   assert.equal(events[0]?.exitCode, 0);
-  assert.equal(events.at(-1)?.summary, 'Slug fixed.\nDONE');
+  assert.equal(events.at(-1)?.summary.replaceAll('\r\n', '\n'), 'Slug fixed.\nDONE');
   assert.equal(events.at(-1)?.usage.outputTokens, 500);
   assert.equal(parseCodex(stdout).summary, 'Intermediate note.');
 });
