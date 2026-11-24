@@ -1,0 +1,1 @@
+Implement slugify(text) in src/index.js: lowercase, strip accents/diacritics (é→e), replace any run of non-alphanumeric characters with a single hyphen, and trim hyphens from both ends.

@@ -1,0 +1,1 @@
+Implement isLeapYear(year) in src/index.js using the Gregorian calendar rules: divisible by 4, except centuries, which are leap years only when divisible by 400 (so 1900 is not a leap year, 2000 is).

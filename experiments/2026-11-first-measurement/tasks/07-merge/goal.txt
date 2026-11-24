@@ -1,0 +1,1 @@
+Implement deepMerge(target, source) in src/index.js returning a NEW object: plain objects are merged recursively, arrays from source replace arrays in target (no concatenation), other values from source win. Neither input may be mutated.
