@@ -11,7 +11,7 @@ Base for the rebuild: `main` at `506b6d3` (Stream coding turns through Responses
 | Step | What | Status |
 | --- | --- | --- |
 | PR 0 `reposition` | README, docs, freeze, `--help` labels | in progress (this PR) |
-| PR 1 `judge-core` | `vlyn judge`, adapters, verdicts incl. `conflict` | next |
+| PR 1 `judge-core` | `vlyn judge`, adapters, verdicts incl. `conflict` | in review |
 | PR 2 `judge-calibration` | `--accept`, predictions, outcomes, `vlyn calibration` | after PR 1 |
 | PR 3 `measurement` | task set, baseline adapter, `vlyn report` | after PR 2 |
 | Decision point | Apply the pre-registered rules in [VALIDATION.md](VALIDATION.md) | after PR 3 |

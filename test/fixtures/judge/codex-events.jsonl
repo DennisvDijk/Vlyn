@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"t-1"}
+{"type":"item.completed","item":{"type":"command_execution","command":"npm test","exit_code":0}}
+{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"src/slug.js","kind":"update"}]}}
+{"type":"item.completed","item":{"type":"agent_message","text":"Intermediate note."}}
+{"type":"turn.completed","usage":{"input_tokens":2000,"output_tokens":500}}

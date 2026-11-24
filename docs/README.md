@@ -6,6 +6,7 @@ Diátaxis split: how-to guides are tasks, reference is lookup, explanation is wh
 
 | Task | Guide |
 | --- | --- |
+| Run an agent in a worktree and get a verdict on its "done" | [Judge](how-to/judge.md) |
 | Install, link the command, and stop before any edit | [Install and first run](how-to/install-and-first-run.md) |
 | OpenAI-compatible endpoints, LiteLLM, Anthropic, Ollama | [Connect a model](how-to/connect-a-model.md) |
 | Use native tool calls, with JSON as the fallback | [Native tools](how-to/native-tools.md) |

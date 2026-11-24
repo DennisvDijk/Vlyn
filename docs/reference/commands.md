@@ -4,6 +4,12 @@ Lookup for the `vlyn` binary on this branch. Paths below assume the command is o
 
 Flags common to several commands: `--json`, `--home PATH` (journal directory, else `VLYN_HOME`, else `~/.vlyn`), `--model NAME`, `--base-url URL`, `--workers N` (1–16).
 
+## Judge
+
+| Command | What it does |
+| --- | --- |
+| `vlyn judge [dir] --agent claude\|codex\|pi --goal TEXT --check CMD [--files A,B] [--protect A,B] [--timeout 20m] [--allow-noop] [--no-require-sandbox]` | Run an existing agent in a detached worktree and print a verdict. Exit 0 `completed`, 1 `failed`, 2 `unverified`, 3 refused, 4 internal error, 5 `conflict`. See [Judge](../how-to/judge.md). |
+
 ## Goal runs
 
 | Command | What it does |

@@ -17,6 +17,7 @@ import { SecurityLog } from './broker.ts';
 import { manifestFor } from './capabilities.ts';
 import { Journal, applyToBranch, converge, defaultHome, executeRun } from './durable.ts';
 import { runEval } from './eval.ts';
+import { JudgeRefusal, exitCodes, exitInternal, exitRefused, judge } from './judge/index.ts';
 import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
 import { planGate, preMortem } from './premortem.ts';
 import { planTasks } from './planner.ts';
@@ -24,8 +25,17 @@ import { guessCheck, runTui, board } from './tui.ts';
 import { doctorTool, graphTool, impactTool } from './tools.ts';
 import type { GraphFormat } from './tools.ts';
 
-const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+function parseDuration(text: string | undefined): number | undefined {
+  if (text === undefined) return undefined;
+  const match = text.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/u);
+  if (!match) throw new JudgeRefusal(`Cannot read --timeout ${text}. Use 20m, 90s or a number of seconds.`);
+  const unit = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 }[match[2] ?? 's'] ?? 1000;
+  return Math.round(Number(match[1]) * unit);
+}
 
+const usage = `Usage: vlyn <judge|tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+
+  judge        Run an existing coding agent (--agent claude|codex|pi) in a worktree and return a verdict. Exit 0 completed, 1 failed, 2 unverified, 3 refused, 4 error, 5 conflict
   tui          (frozen) Interactive session: state a goal, review the generated plan, watch agents work
   auto         (frozen) Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
   resume       (frozen) Continue an interrupted run by id (survives crashes, closed terminals and reboots)
@@ -64,6 +74,12 @@ const usage = `Usage: vlyn <tui|auto|resume|runs|actors|lessons|eval|converge|ap
   --since REV  Use files changed since a Git revision for impact
     --apply      With lessons: write the suggestion into AGENTS.md (off unless you pass this)
     --require-sandbox  Refuse checks when this OS cannot confine them
+  --agent A    With judge: claude, codex or pi
+  --files P    With judge: owned files or folders, comma separated (default: everything not protected)
+  --protect P  With judge: extra protected paths, comma separated (tests, test config, CI, lockfiles are always protected)
+  --timeout T  With judge: agent time limit, e.g. 20m, 90s or a number of seconds (default 20m)
+  --allow-noop With judge: an empty diff is not unverified
+  --no-require-sandbox  With judge: run the check even when this OS cannot isolate it
   --json       Emit the report as JSON
   --help       Show usage
 
@@ -102,7 +118,8 @@ async function main(): Promise<number> {
       db: { type: 'string' }, workers: { type: 'string' }, model: { type: 'string' },
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
-      json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' },
+      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -117,6 +134,44 @@ async function main(): Promise<number> {
   const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
   const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
+  if (positionals[0] === 'judge') {
+    try {
+      const list = (text: string | undefined) =>
+        text
+          ?.split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+      const result = await judge({
+        agent: values.agent ?? '',
+        goal: values.goal ?? '',
+        check: values.check ?? '',
+        root: positionals[1] ?? '.',
+        files: list(values.files),
+        protect: list(values.protect),
+        timeoutMs: parseDuration(values.timeout),
+        allowNoop: values['allow-noop'] ?? false,
+        requireSandbox: !values['no-require-sandbox'],
+        home: values.home,
+      });
+      if (values.json) console.log(JSON.stringify({ ...result, diff: undefined }, null, 2));
+      else {
+        console.log(`${result.verdict}${result.reasons.length ? ` (${result.reasons.join(', ')})` : ''}`);
+        if (result.details.protectedTouched.length)
+          console.log(`  protected files changed: ${result.details.protectedTouched.join(', ')}`);
+        if (result.details.outOfScope.length) console.log(`  outside --files: ${result.details.outOfScope.join(', ')}`);
+        if (result.details.skipMarkers.length)
+          console.log(`  new skip markers: ${result.details.skipMarkers.map((hit) => hit.file).join(', ')}`);
+        if (result.details.conflicts.length) console.log(`  conflict reported: ${result.details.conflicts.join('; ')}`);
+        if (result.details.error) console.log(`  agent: ${result.details.error}`);
+        console.log(`  run ${result.id}, ${result.changedFiles.length} changed file(s)`);
+      }
+      return exitCodes[result.verdict];
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      console.error(display(message));
+      return cause instanceof JudgeRefusal ? exitRefused : exitInternal;
+    }
+  }
   if (positionals[0] === 'eval') {
     const report = await runEval();
     console.log(values.json ? JSON.stringify(report, null, 2) : [report.note, ...report.cases.map(item => `${item.passed && item.honest ? 'ok  ' : 'FAIL'} ${item.id}  ${item.status}  confidence ${item.confidence}`), `pass ${report.summary.passRate} · honesty ${report.summary.honestyRate} · brier ${report.summary.brier} · tokens ${report.summary.estimatedTokens}`].join('\n'));
