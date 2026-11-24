@@ -122,6 +122,11 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
   let selfConfidence: number | undefined;
   let error: string | undefined;
   let finished = false;
+  let agentEventsObserved = false;
+  let agentEdits = 0;
+  let agentCheckCycles = 0;
+  let pendingEdit = false;
+  let agentLastCheck: boolean | undefined;
   try {
     for await (const event of adapter.run({
       worktree,
@@ -130,6 +135,19 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
       env: options.env ?? {},
       signal: controller.signal,
     }) as AsyncIterable<AgentEvent>) {
+      if (event.type === 'edit') {
+        agentEventsObserved = true;
+        agentEdits++;
+        pendingEdit = true;
+      }
+      if (event.type === 'command') {
+        agentEventsObserved = true;
+        if (event.command.trim() === options.check.trim()) {
+          if (pendingEdit) agentCheckCycles++;
+          pendingEdit = false;
+          agentLastCheck = event.exitCode === undefined ? undefined : event.exitCode === 0;
+        }
+      }
       if (event.type === 'finish') {
         finished = true;
         summary = event.summary;
@@ -231,6 +249,10 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
       details,
       changedFiles: changedFiles.length,
       diffLines: diff.split('\n').filter((line) => /^[+-](?![+-])/u.test(line)).length,
+      agentEventsObserved,
+      agentEdits,
+      agentCheckCycles,
+      agentLastCheck,
     });
     const model = journal ? chooseModel(historyOf(journal)) : handModel;
     const pProcess = predict(model, features);

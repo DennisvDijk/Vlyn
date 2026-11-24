@@ -24,6 +24,11 @@ export const featureNames = [
   'crashed',
   'log_diff_lines',
   'log_changed_files',
+  'agent_events_observed',
+  'agent_edits',
+  'agent_check_cycles',
+  'agent_last_check_known',
+  'agent_last_check_passed',
 ] as const;
 
 export type Features = Record<(typeof featureNames)[number], number>;
@@ -35,6 +40,10 @@ export function featuresOf(input: {
   details: JudgeDetails;
   changedFiles: number;
   diffLines: number;
+  agentEventsObserved: boolean;
+  agentEdits: number;
+  agentCheckCycles: number;
+  agentLastCheck: boolean | undefined;
 }): Features {
   return {
     check_passed: input.checkRan && input.checkPassed ? 1 : 0,
@@ -47,6 +56,11 @@ export function featuresOf(input: {
     crashed: input.crashed ? 1 : 0,
     log_diff_lines: Math.log10(1 + input.diffLines),
     log_changed_files: Math.log10(1 + input.changedFiles),
+    agent_events_observed: input.agentEventsObserved ? 1 : 0,
+    agent_edits: input.agentEdits,
+    agent_check_cycles: input.agentCheckCycles,
+    agent_last_check_known: input.agentLastCheck === undefined ? 0 : 1,
+    agent_last_check_passed: input.agentLastCheck === true ? 1 : 0,
   };
 }
 
@@ -57,7 +71,8 @@ export const handModel: Model = {
   version: 'hand-v1',
   bias: 0.3,
   //        passed failed prot  scope skip  confl empty crash ldiff lfiles
-  weights: [1.5, -1.5, -1.5, -1.0, -1.5, -1.5, -1.0, -3.0, -0.3, -0.2],
+  // New signals have zero weight until they can be fitted against outcomes.
+  weights: [1.5, -1.5, -1.5, -1.0, -1.5, -1.5, -1.0, -3.0, -0.3, -0.2, 0, 0, 0, 0, 0],
 };
 
 export const minOutcomesToFit = 30;
@@ -94,7 +109,8 @@ export function fitLogistic(rows: { features: Features; r: 0 | 1 }[], rounds = 3
 
 /** The model to use: a fitted one from at least 30 earlier outcomes, otherwise the hand-set one. */
 export function chooseModel(history: { features: Features; r: 0 | 1 }[]): Model {
-  return history.length >= minOutcomesToFit ? fitLogistic(history) : handModel;
+  const compatible = history.filter(row => row.features && featureNames.every(name => Number.isFinite(row.features[name])));
+  return compatible.length >= minOutcomesToFit ? fitLogistic(compatible) : handModel;
 }
 
 export type Scored = { p: number; r: 0 | 1 };
