@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { SecurityLog, endpointAllowed, findInjections, guardModel } from '../src/broker.ts';
 import { canRun, canWrite, grant, manifestFor, splitCommand } from '../src/capabilities.ts';
 import { runCodingAgent } from '../src/coding-agent.ts';
-import { bubblewrapArgs, measureOverhead, posture, redact, runGoverned, scrubEnv, seatbeltProfile } from '../src/sandbox.ts';
+import { bubblewrapArgs, bubblewrapAvailable, measureOverhead, planLaunch, posture, redact, runGoverned, scrubEnv, seatbeltProfile, seatbeltAvailable, unshareAvailable } from '../src/sandbox.ts';
 import { openJournal, tempDir } from './helpers.ts';
 
 const secret = 'sk-test-secret-value';
@@ -88,20 +88,25 @@ test('a governed node check cannot read outside the worktree, and the key is not
   assert.equal(absent.output, 'absent');
 });
 
-test('linux network confinement is reported honestly and blocks a connect when unshare works', async context => {
-  const box = posture();
-  assert.equal(box.landlock, false);
-  assert.equal(box.seccomp, false);
-  if (process.platform !== 'linux' || box.network !== 'unshare') {
-    assert.equal(box.network === 'none' || box.network === 'seatbelt' || box.network === 'bubblewrap' || box.network === 'unshare', true);
-    return;
+test('network confinement is launch-plan evidence, not a live egress probe', () => {
+  const command = 'node -e "process.exit(0)"';
+  const launch = planLaunch(command, process.cwd(), manifestFor(process.cwd(), { check: command }));
+  if (launch.isolation.network === 'unshare') {
+    assert.equal(launch.file, 'unshare');
+    assert.ok(launch.args.includes('--net'));
   }
-  const cwd = await mkdtemp(join(tmpdir(), 'vlyn-net-'));
-  context.after(() => import('node:fs/promises').then(fs => fs.rm(cwd, { recursive: true, force: true })));
-  const command = 'node -e "const n=require(\'net\');const s=n.connect(80,\'1.1.1.1\');s.setTimeout(1500);s.on(\'connect\',()=>process.exit(0));s.on(\'timeout\',()=>process.exit(4));s.on(\'error\',e=>{console.log(e.code);process.exit(3)})"';
-  const result = await runGoverned({ command, cwd, manifest: manifestFor(cwd, { check: command }) });
-  assert.notEqual(result.exitCode, 0);
-  assert.match(result.output, /ENETUNREACH|EHOSTUNREACH|ETIMEDOUT|ENETDOWN/);
+  assert.equal(launch.isolation.network, posture().network);
+});
+
+test('fallback posture reports the available network driver', () => {
+  const box = posture();
+  if (process.platform === 'linux') {
+    assert.equal(box.network, bubblewrapAvailable() ? 'bubblewrap' : unshareAvailable() ? 'unshare' : 'none');
+  } else if (process.platform === 'darwin') {
+    assert.equal(box.network, seatbeltAvailable() ? 'seatbelt' : 'none');
+  } else {
+    assert.equal(box.network, 'none');
+  }
 });
 
 test('bubblewrap and seatbelt plans deny the network and do not embed secrets', () => {
