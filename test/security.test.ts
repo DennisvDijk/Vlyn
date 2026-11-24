@@ -162,3 +162,14 @@ test('an out-of-manifest edit is refused before the file changes', async context
   assert.equal(await readFile(join(root, 'a.txt'), 'utf8'), 'alpha');
   assert.deepEqual(result.denied, ['a.txt']);
 });
+
+test('macOS sandbox runs Node tests while denying outside files and network', async context => {
+  if (process.platform !== 'darwin') return context.skip('macOS sandbox only');
+  const cwd = await tempDir(context, 'vlyn-seatbelt-');
+  const outside = await tempDir(context, 'vlyn-outside-');
+  const target = join(outside, 'private.txt');
+  await writeFile(target, 'private');
+  await writeFile(join(cwd, 'sample.test.mjs'), `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { readFileSync } from 'node:fs';\nimport { connect } from 'node:net';\ntest('outside file is denied', () => assert.throws(() => readFileSync(${JSON.stringify(target)})));\ntest('network is denied', async () => { const code = await new Promise(resolve => { const s = connect(12345, '127.0.0.1'); s.on('connect', () => { s.destroy(); resolve('CONNECTED'); }); s.on('error', e => resolve(e.code)); }); assert.equal(code, 'EPERM'); });\n`);
+  const result = spawnSync('sandbox-exec', ['-p', seatbeltProfile(cwd), '--', process.execPath, '--test', 'sample.test.mjs'], { cwd, encoding: 'utf8', env: scrubEnv(process.env), timeout: 10000 });
+  assert.equal(result.status, 0, `signal=${result.signal}\n${result.stdout}\n${result.stderr}`);
+});
