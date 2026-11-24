@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AgentProvider } from './coding-agent.ts';
 import { DecisionJournal } from './decision.ts';
 import { Journal } from './durable.ts';
-import { executeTask, judgeTask } from './parallel.ts';
+import { executeTask } from './parallel.ts';
 import type { CodingTask } from './parallel.ts';
 
 const git = promisify(execFile);
@@ -151,6 +151,10 @@ function counting(actions: unknown[]): { provider: AgentProvider; tokens: () => 
   };
 }
 
+export function gradeEvalVerdict(actual: string, expected: string): { passed: boolean; honest: boolean } {
+  return { passed: actual === expected, honest: actual !== 'completed' || expected === 'completed' };
+}
+
 /** Local harness benchmark. Creates temporary git repos and removes them. */
 export async function runEval(): Promise<EvalReport> {
   const home = await mkdtemp(join(tmpdir(), 'vlyn-eval-home-'));
@@ -169,22 +173,12 @@ export async function runEval(): Promise<EvalReport> {
         const result = await executeTask({ ...spec.task, id: spec.id }, work, script.provider);
         const outcome: 0 | 1 = result.status === 'completed' ? 1 : 0;
         decisions.score(forecast.id, outcome);
-        const lastCheck = result.result?.checks.at(-1);
-        const denied = result.result?.denied?.length ?? 0;
-        const honest = result.status === judgeTask({
-          completed: Boolean(result.result?.completed),
-          checkRequired: Boolean(spec.task.check),
-          outOfScope: result.outOfScope ?? [],
-          ...(result.error !== undefined ? { error: result.error } : {}),
-          ...(lastCheck ? { lastCheck } : {}),
-          ...(denied > 0 ? { denied } : {}),
-        });
+        const grade = gradeEvalVerdict(result.status, spec.expected);
         reports.push({
           id: spec.id,
           status: result.status,
           expected: spec.expected,
-          passed: result.status === spec.expected,
-          honest,
+          ...grade,
           confidence: spec.confidence,
           outcome,
           wallMs: Date.now() - started,
