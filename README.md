@@ -8,13 +8,31 @@
 
 Vlyn runs an existing coding agent (Claude Code, Codex, Pi) in an isolated git worktree and returns a verdict (`completed`, `unverified`, `conflict`, `failed`). Next, it gives a probability that the work is really correct, and checks that probability against a held-out test the agent never saw. Local, auditable, no runtime dependencies.
 
+## Quick start
+
+No runtime dependencies. Node.js 24.12 or newer, and Git.
+
+```sh
+npm ci --ignore-scripts
+npm link          # from a clone, `node src/cli.ts` is the same command as `vlyn`
+
+# Judge one agent's "done" in an isolated worktree, with a held-out acceptance test
+vlyn judge --agent claude --goal "Add input validation" --check "npm test" \
+  --accept "node .vlyn-accept/accept.mjs" --accept-dir ../held-out
+
+vlyn calibration  # Brier, ECE and AUROC per predictor
+vlyn report       # markdown report with the decision rules applied
+```
+
+Measuring many tasks (nothing runs without `--execute`): [how to judge](docs/how-to/judge.md) and [the task set and commands](experiments/2026-11-hard-tasks/README.md).
+
 ## Status: a measurement instrument first
 
-Vlyn is being rebuilt, in small steps, and measured before it grows. What exists and what does not:
+Vlyn is rebuilt in small steps and measured before it grows.
 
-- **Built:** the earlier harness (planner, worktrees, journal, sandboxed checks, hash-chained audit, lessons). It is [frozen](docs/FROZEN.md), not removed, and its commands still work.
-- **In progress:** `vlyn judge`, the verdict and the calibrated probability ([design](docs/design/judge.md), [roadmap](docs/ROADMAP.md)). Until it lands, `vlyn judge` does not exist.
-- **Not shown yet:** any proof that the probability beats the agent's own confidence. That is what the measurement is for.
+- **Built:** `vlyn judge` (verdicts, gates, `--accept`, `p_self`, `p_process`), `vlyn calibration`, and the measurement tooling (`judge --tasks`, baseline adapter, `vlyn report`). See the [design](docs/design/judge.md) and [roadmap](docs/ROADMAP.md).
+- **Not run yet:** the measurement on hard tasks. It needs model keys and 17 more tasks. Until then there is no proof that the probability beats the agent's own confidence.
+- **Frozen, not removed:** the earlier harness ([FROZEN.md](docs/FROZEN.md)). Its commands still work.
 
 ### The first measurement, honestly
 
@@ -40,14 +58,9 @@ Vlyn is not a brain. Brain research is used as a source of design ideas and stay
 - [Motivation and control: from brain to harness](docs/research/motivation-and-control.md)
 - [Memory and decision research](docs/research/state-of-the-art.md)
 
-## What you can run today
-
-No runtime dependencies. Node.js 24.12 or newer, and Git.
+## Other commands
 
 ```sh
-npm ci --ignore-scripts
-npm link          # from a clone, `node src/cli.ts` is the same command as `vlyn`
-
 vlyn doctor       # which confinement this OS really provides
 vlyn audit        # read the hash-chained allow/deny log
 vlyn eval         # the scripted suite (measures the harness, not a live model)
@@ -69,60 +82,8 @@ vlyn auto --goal "Add input validation to the CLI" --check "npm test" --plan-onl
 
 Repository files the agent reads are sent to the model provider you configured. Your checkout is not modified.
 
-<details>
-<summary>How a frozen goal run works (diagram)</summary>
+How a frozen goal run works, with diagrams: [docs/FROZEN.md](docs/FROZEN.md#how-a-frozen-goal-run-works).
 
-`vlyn auto` and the TUI `n` command follow this path. `vlyn auto` does not spawn actor rows.
-
-```mermaid
-flowchart TD
-  goal["vlyn auto --goal or TUI n"]
-  mem["lessons.ts planningMemory"]
-  planner["planner.ts planTasks"]
-  gate{"premortem.ts planGate"}
-  stopped["exit 1, no worktree"]
-  created["durable.ts Journal.create"]
-  run["durable.ts executeRun"]
-  task["parallel.ts executeTask"]
-  agent["coding-agent.ts"]
-  manifest["capabilities.ts manifestFor"]
-  sand["sandbox.ts planLaunch"]
-  parent["providers.ts in the parent"]
-  audit["broker.ts SecurityLog"]
-  judge["parallel.ts judgeTask"]
-  integ["durable.ts converge"]
-  apply["vlyn apply --branch"]
-  aar["premortem.ts afterAction"]
-  back["lessons.ts consolidate"]
-
-  goal --> mem --> planner --> gate
-  gate -->|"risk at 0.7 or higher"| stopped
-  gate -->|"below 0.7, --proceed, or TUI force"| created --> run --> task --> agent
-  agent --> manifest --> sand
-  agent --> parent
-  agent --> audit
-  task --> judge
-  judge -->|"more than one task completed"| integ
-  integ -->|"integration passed"| apply
-  run --> aar --> back
-  back --> mem
-```
-
-Each task gets a detached worktree at the same commit. `judgeTask` returns `completed` only when the agent finished, the last check passed after the last edit, and every changed path is inside the owned files. When more than one task is `completed`, `converge` copies those diffs onto `_integration` and runs the checks there. `vlyn apply --branch NAME` commits that tree and creates the branch without moving `HEAD`. The journal is one SQLite file under `~/.vlyn` (`VLYN_HOME` or `--home`).
-
-```mermaid
-flowchart LR
-  db["~/.vlyn SQLite"]
-  db --> durable["durable.ts: runs, tasks, specs, events, convergence"]
-  db --> lessons["lessons.ts: lessons, lesson_state"]
-  db --> actors["actors.ts: actors, brain_snapshots, actor_messages"]
-  db --> chain["broker.ts: security_audit hash chain"]
-  db --> forecasts["decision.ts: forecasts, written by vlyn eval"]
-```
-
-`ActorRuntime` in `src/actors.ts` keeps idle actors as versioned snapshots (spawn, claim, release, revert, fork, supervise). A goal run does not call it. Guide: [docs/how-to/actor-snapshots.md](docs/how-to/actor-snapshots.md).
-
-</details>
 
 | Frozen or kept | Command | Guide |
 | --- | --- | --- |
@@ -139,7 +100,7 @@ flowchart LR
 
 Checks run with a capability manifest: the task's files, the exact check string, and no child network unless this machine cannot actually enforce that. The API key stays in the parent process. Check environments drop variables whose names look like secrets, and those values are redacted out of tool output and the audit log.
 
-`vlyn doctor` prints which confinement is real on this OS (`unshare`, bubblewrap, `sandbox-exec`, Node's `--permission`, or only the in-process gate). Landlock and seccomp are not on. `--require-sandbox` refuses a check we cannot confine. `vlyn audit [run]` prints the hash-chained log and exits 2 if a row was edited. An external agent run by `vlyn judge` will not be sandboxed by Vlyn in the first phase, only the check will be. Guide: [docs/how-to/sandbox-and-audit.md](docs/how-to/sandbox-and-audit.md). Threat model: [docs/security/threat-model.md](docs/security/threat-model.md).
+`vlyn doctor` prints which confinement is real on this OS (`unshare`, bubblewrap, `sandbox-exec`, Node's `--permission`, or only the in-process gate). Landlock and seccomp are not on. `--require-sandbox` refuses a check we cannot confine. `vlyn audit [run]` prints the hash-chained log and exits 2 if a row was edited. The external agent run by `vlyn judge` is not sandboxed by Vlyn yet, only the checks are. Guide: [docs/how-to/sandbox-and-audit.md](docs/how-to/sandbox-and-audit.md). Threat model: [docs/security/threat-model.md](docs/security/threat-model.md).
 
 ## Limitations
 
