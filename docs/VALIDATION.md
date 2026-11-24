@@ -2,7 +2,7 @@
 
 Vlyn claims one thing: a probability that a coding agent's "done" is really done, which can be proven right against tests the agent never saw. This page records how that claim is tested, what the first measurement found, and the decision rules that were fixed before looking at the next data.
 
-Status: first measurement done on easy tasks (23 Nov 2026). Measurement on hard tasks not yet run.
+Status: first measurement done on easy tasks (23 Nov 2026). A limited live pilot on example hard tasks ran on 24 November; the full hard-task measurement has not yet run.
 
 ## First measurement (23 Nov 2026)
 
@@ -49,7 +49,7 @@ The 5 runs not counted as "DONE" all reported BLOCKED on a conflict task: `09-le
 ## Validation plan for hard tasks
 
 1. **Task set.** 20 hard tasks on which agents are expected to score 30–70%. From own repositories, or real issues from public repositories (watch for contamination). Each has a visible check and a held-out acceptance test. Plus 3 tasks with a contradicting test, where the right verdict is `conflict`.
-2. **Runs.** 3 per task and agent, with Claude Code, Codex and Pi (renew the Pi key first).
+2. **Runs.** 3 per task and agent, with Claude Code, Codex and Pi (verify the selected provider and authentication first).
 3. **Baseline (level 2).** One existing verifier on the same runs, in the sandbox, outside the repository. Only its JSON output is read, and treated as untrusted.
 4. **Measure.**
    - how often "done" is right (with a 95% interval);
@@ -58,7 +58,7 @@ The 5 runs not counted as "DONE" all reported BLOCKED on a conflict task: `09-le
    - cost per run.
 5. **Decide**, using the rules below.
 
-`vlyn judge --tasks` and `vlyn report` run and summarise this. Cost cap for a real run: €25 (the `--budget` threshold is in US dollars; it is not a provider-enforced spending cap). The real measurement runs only with configured keys; until then only the task format, three example tasks and the exact commands exist: see [experiments/2026-11-hard-tasks](../experiments/2026-11-hard-tasks/README.md).
+`vlyn judge --tasks` and `vlyn report` run and summarise this. Cost cap for a real run: €25 (the `--budget` threshold is in US dollars; it is not a provider-enforced spending cap). The full measurement has not yet been run. Two live topo-sort pilot runs with Codex and Pi passed both visible and held-out checks, but the sample is too small for the decision rules; earlier runs may be invalid because of sandbox or provider failures. See the three example tasks and commands in [experiments/2026-11-hard-tasks](../experiments/2026-11-hard-tasks/README.md).
 
 The report applies the rules mechanically and only when there are at least 20 "done" claims with an accept outcome (a minimum added in PR 3). Below that it says "not enough data".
 
@@ -75,4 +75,4 @@ For PR 6 and 7 a second measurement applies: the accept rate per task type must 
 
 ## Results on hard tasks
 
-Not yet run. The report format is produced by `vlyn report`; paste its output here after the run.
+The full measurement has not yet run. The report format is produced by `vlyn report`; paste its output here after the run.

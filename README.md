@@ -31,7 +31,7 @@ Measuring many tasks (nothing runs without `--execute`): [how to judge](docs/how
 Vlyn is rebuilt in small steps and measured before it grows.
 
 - **Built:** `vlyn judge` (verdicts, gates, `--accept`, `p_self`, `p_process`), `vlyn calibration`, and the measurement tooling (`judge --tasks`, baseline adapter, `vlyn report`). See the [design](docs/design/judge.md) and [roadmap](docs/ROADMAP.md).
-- **Not run yet:** the measurement on hard tasks. It needs model keys and 17 more tasks. Until then there is no proof that the probability beats the agent's own confidence.
+- **Not run yet:** the full measurement on hard tasks. The design specifies 20 hard tasks plus three conflict tasks; the examples contain two hard tasks and one conflict task. A baseline and further tasks are still needed. Until then there is no proof that the probability beats the agent's own confidence.
 - **Frozen, not removed:** the earlier harness ([FROZEN.md](docs/FROZEN.md)). Its commands still work.
 
 ### The first measurement, honestly
@@ -104,7 +104,7 @@ Checks run with a capability manifest: the task's files, the exact check string,
 
 ## Limitations
 
-- Nothing here has been scored against a live model in CI. Tests use scripted replies and recorded fixtures.
+- Nothing here has been scored against a live model in CI. Tests use scripted replies and hand-written adapter fixtures.
 - The frozen harness has a weak agent loop for real repositories (no grep/glob, no ranged read, no general shell). Documented in [docs/llm-parity.md](docs/llm-parity.md).
 - A check is network-confined only when `unshare`, bubblewrap, or `sandbox-exec` launches it. Node's `--permission` did not block `net.connect` on Node 24.12.
 - File ownership in the frozen harness is whatever the model declared.

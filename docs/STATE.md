@@ -10,17 +10,18 @@ Base for the rebuild: `main` at `506b6d3` (Stream coding turns through Responses
 
 | Step | What | Status |
 | --- | --- | --- |
-| PR 0 `reposition` | README, docs, freeze, `--help` labels | in progress (this PR) |
-| PR 1 `judge-core` | `vlyn judge`, adapters, verdicts incl. `conflict` | in review |
-| PR 2 `judge-calibration` | `--accept`, predictions, outcomes, `vlyn calibration` | in review |
-| PR 3 `measurement` | task format, baseline adapter, `vlyn report`, example tasks and commands | in review |
+| PR 0 `reposition` | README, docs, freeze, `--help` labels | done (#26) |
+| PR 1 `judge-core` | `vlyn judge`, adapters, verdicts incl. `conflict` | done (#27) |
+| PR 2 `judge-calibration` | `--accept`, predictions, outcomes, `vlyn calibration` | done (#28) |
+| PR 3 `measurement` | task format, baseline adapter, `vlyn report`, example tasks and commands | done (#29) |
 | Decision point | Apply the pre-registered rules in [VALIDATION.md](VALIDATION.md) | after PR 3 |
 | PR 4–7 | Agent sandbox, ACP, learning loop, extra control | only after "go" |
 
 ## What the evidence says
 
 - First measurement (23 Nov 2026, 40 runs, 10 easy tasks, Claude Code and Codex): "done" was right 35 of 35 times. No gap on easy tasks. Vlyn's `p_process` (Brier 0.201) was worse than the agent's own confidence (0.010). The old verdict rule wrongly punished honest agents on tasks with a contradicting test, which led to the verdict `conflict`. Details: [VALIDATION.md](VALIDATION.md).
-- Nothing on `main` has called a live model in CI. Tests use scripted replies and recorded fixtures.
+- Nothing on `main` has called a live model in CI. Tests use scripted replies and hand-written adapter fixtures; the requested recorded fixtures are still outstanding.
+- A limited live pilot on 24 November exercised Codex and Pi on the topo-sort example. Both passed the visible and held-out checks after the macOS sandbox fix. Earlier pilot runs may be invalid because of sandbox or provider failures. No baseline was validated and Codex’s confidence request was interrupted. This pilot does not establish calibration.
 - Whether a gap exists on hard tasks is not known yet. That decides everything after PR 3.
 
 ## Known weak points of the earlier code
