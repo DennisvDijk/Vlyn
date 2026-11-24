@@ -2,6 +2,8 @@
 
 Diátaxis split: how-to guides are tasks, reference is lookup, explanation is why. The handoff for the next session is [STATE.md](STATE.md). The plan is [ROADMAP.md](ROADMAP.md). Vlyn is a measurement instrument for trust in coding agents first; the earlier harness is [frozen](FROZEN.md).
 
+What Vlyn does, and why it is worth it: [WHAT-VLYN-DOES.md](WHAT-VLYN-DOES.md).
+
 ## How-to
 
 | Task | Guide |

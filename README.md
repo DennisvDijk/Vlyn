@@ -68,7 +68,7 @@ vlyn lessons      # lessons from repeated failures
 vlyn graph .      # JS/TS import graph, fails on a cycle
 ```
 
-Guides: [docs/README.md](docs/README.md). Where the project is: [docs/STATE.md](docs/STATE.md).
+What it does, in one page: [docs/WHAT-VLYN-DOES.md](docs/WHAT-VLYN-DOES.md). Guides: [docs/README.md](docs/README.md). Where the project is: [docs/STATE.md](docs/STATE.md).
 
 ## Frozen: the earlier harness
 
