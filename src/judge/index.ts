@@ -237,13 +237,19 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
     let pSelf: number | undefined;
     if (!crashed) {
       try {
-        const reply = adapter.ask
-          ? await adapter.ask(
-              { worktree, goal: options.goal, check: options.check, env: options.env ?? {}, signal: controller.signal },
-              selfQuestion,
-              summary,
-            )
-          : undefined;
+        let reply: string | undefined;
+        if (adapter.ask) {
+          const askController = new AbortController();
+          const askSignal = AbortSignal.any([controller.signal, askController.signal]);
+          let askTimer: ReturnType<typeof setTimeout> | undefined;
+          const deadline = new Promise<undefined>(resolve => {
+            askTimer = setTimeout(() => { askController.abort(); resolve(undefined); }, timeoutMs);
+          });
+          reply = await Promise.race([
+              adapter.ask({ worktree, goal: options.goal, check: options.check, env: options.env ?? {}, signal: askSignal }, selfQuestion, summary),
+              deadline,
+            ]).finally(() => clearTimeout(askTimer));
+        }
         pSelf = reply === undefined ? selfConfidence : parseProbability(reply);
       } catch {
         pSelf = selfConfidence;
@@ -312,7 +318,7 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
     }
 
     // Held-out check. Its output is dropped here: only pass or fail is kept.
-    if (options.accept?.trim()) {
+    if (!crashed && options.accept?.trim()) {
       options.onAccept?.();
       accept = await runAccept(options.accept, options.acceptDir, worktree, requireSandbox);
       if (journal && accept.ran) {

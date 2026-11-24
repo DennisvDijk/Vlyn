@@ -313,3 +313,9 @@ test('a subprocess adapter throws when the agent exits non-zero', async (context
   await assert.rejects(collect(createAdapter('claude', { exec }).run(input(await tempDir(context)))), /exited with 2/u);
   assert.equal(existsSync(await tempDir(context)), true);
 });
+
+test('Pi provider errors are rejected even when the process exits successfully', async context => {
+  const stdout = JSON.stringify({ type: 'agent_end', messages: [{ role: 'assistant', content: [], stopReason: 'error', errorMessage: '401: api_key_expired' }] });
+  const exec: Exec = async () => ({ code: 0, stdout, stderr: '' });
+  await assert.rejects(collect(createAdapter('pi', { exec }).run(input(await tempDir(context)))), /provider.*error/iu);
+});
