@@ -165,6 +165,11 @@ export function parsePi(stdout: string): Parsed {
   const events: AgentEvent[] = [];
   let summary = '';
   for (const event of lines(stdout)) {
+    const messages = Array.isArray(event.messages) ? event.messages : [event.message ?? event];
+    if (messages.some((item) => {
+      const message = obj(item);
+      return message?.role === 'assistant' && message.stopReason === 'error';
+    })) return { events, summary: '', error: 'model provider reported an error' };
     const message = obj(event.message) ?? event;
     if (message.role !== 'assistant') continue;
     const content = message.content;

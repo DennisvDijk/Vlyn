@@ -246,3 +246,22 @@ test('subprocess adapters ask the fixed question in a separate call that is not 
   assert.ok(calls[0]?.stdin.includes(selfQuestion));
   assert.ok(!calls[0]?.stdin.includes('npm test'));
 });
+
+test('a failed agent is not scored against a held-out test', async context => {
+  const root = await gitRepo(context, files);
+  const acceptDir = await acceptFolder(context, false);
+  const result = await judge({ ...base, root, agent: createAdapter('fake', { script: { crash: 'provider error' } }), accept: 'node .vlyn-accept/accept.mjs', acceptDir });
+  assert.equal(result.reasons[0], 'agent_crash');
+  assert.equal(result.accept, undefined);
+});
+
+test('a stalled self-confidence request is bounded independently of the agent run', async context => {
+  const root = await gitRepo(context, files);
+  const fake = createAdapter('fake', { script: { edits: { 'src.txt': 'good\n' } } });
+  const agent: AgentAdapter = { ...fake, ask: async input => new Promise(resolve => input.signal.addEventListener('abort', () => resolve(undefined), { once: true })) };
+  const started = Date.now();
+  const result = await judge({ ...base, root, agent, timeoutMs: 150 });
+  assert.equal(result.verdict, 'completed');
+  assert.equal(result.predictions?.self, undefined);
+  assert.ok(Date.now() - started < 3000);
+});
