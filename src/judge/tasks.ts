@@ -158,8 +158,10 @@ export type MeasurementOptions = {
   directory: string;
   agents: (string | AgentAdapter)[];
   runs: number;
-  /** Hard cap in US dollars. Runs stop before it would be passed. */
+  /** Counted-spend threshold, not a guarantee of actual provider spend. */
   budgetUsd: number;
+  /** Counted spend from previous attempts, supplied by the operator. */
+  priorSpendUsd?: number;
   /** Counted for a run that reports no cost (Codex, Pi), so the cap still bounds the spend. */
   assumedUnknownCostUsd?: number;
   timeoutMs?: number;
@@ -182,12 +184,14 @@ export type MeasurementSummary = {
 const name = (agent: string | AgentAdapter) => (typeof agent === 'string' ? agent : agent.name);
 
 export async function runMeasurement(options: MeasurementOptions): Promise<MeasurementSummary> {
-  if (!(options.budgetUsd > 0)) throw new JudgeRefusal('A budget is required: pass --budget with a positive number of US dollars.');
+  if (!Number.isFinite(options.budgetUsd) || !(options.budgetUsd > 0)) throw new JudgeRefusal('A budget is required: pass --budget with a positive number of US dollars.');
+  const priorSpend = options.priorSpendUsd ?? 0;
+  if (!Number.isFinite(priorSpend) || priorSpend < 0) throw new JudgeRefusal('Prior spend must be a non-negative number of US dollars.');
   const assumed = options.assumedUnknownCostUsd ?? 1;
   const plan = planMeasurement(options.file, options.agents.map(name), options.runs);
   const byId = new Map(options.file.tasks.map((task) => [task.id, task]));
   const adapters = new Map(options.agents.map((agent) => [name(agent), agent]));
-  let spent = 0;
+  let spent = priorSpend;
   let largest = assumed;
   let stopped = false;
   const runIds: string[] = [];

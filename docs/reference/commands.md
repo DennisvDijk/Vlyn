@@ -9,7 +9,7 @@ Flags common to several commands: `--json`, `--home PATH` (journal directory, el
 | Command | What it does |
 | --- | --- |
 | `vlyn judge [dir] --agent claude\|codex\|pi --goal TEXT --check CMD [--files A,B] [--protect A,B] [--timeout 20m] [--allow-noop] [--no-require-sandbox]` | Run an existing agent in a detached worktree and print a verdict. Exit 0 `completed`, 1 `failed`, 2 `unverified`, 3 refused, 4 internal error, 5 `conflict`. See [Judge](../how-to/judge.md). `--accept CMD` and `--accept-dir DIR` add the held-out check and the predictions. |
-| `vlyn judge --tasks FILE [--agents A,B] [--runs N] [--budget USD] [--baseline CMD] [--execute]` | Measure many tasks. Prints the plan and runs nothing unless `--execute` is given. `--budget` is a hard cap in US dollars. |
+| `vlyn judge --tasks FILE [--agents A,B] [--runs N] [--budget USD] [--baseline CMD] [--execute]` | Measure many tasks. Prints the plan and runs nothing unless `--execute` is given. `--budget` is a counted-spend threshold in US dollars, not a provider spending cap; include earlier attempts with `--prior-spend`. |
 | `vlyn report [--out FILE]` | Markdown report of measured runs: "done" accuracy with 95% interval, Brier and AUROC per predictor, `conflict` recognition, cost, and the decision rules applied. |
 | `vlyn calibration [--json]` | Brier, ECE and AUROC per predictor (`self`, `process`) from judged runs that have an accept outcome. |
 

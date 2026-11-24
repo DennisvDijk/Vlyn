@@ -188,7 +188,7 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
         manifest: manifestFor(worktree, { check: options.check }),
         requireSandbox,
       });
-      ran = result.exitCode !== null;
+      ran = result.exitCode !== null && !testRunnerBlocked(result);
       passed = result.exitCode === 0;
       check = {
         command: options.check,
@@ -386,10 +386,18 @@ async function runAccept(
       manifest: manifestFor(worktree, { check: command }),
       requireSandbox,
     });
-    return { ran: result.exitCode !== null, passed: result.exitCode === 0 };
+    return { ran: result.exitCode !== null && !testRunnerBlocked(result), passed: result.exitCode === 0 };
   } catch {
     return { ran: false, passed: false };
   }
+}
+
+/** Node's test runner cannot start its workers under the permission sandbox. */
+function testRunnerBlocked(result: { command: string; output: string; isolation: { driver: string } }): boolean {
+  return result.isolation.driver.includes('node-permission')
+    && /^node(?:\.exe)?\s+--test(?:\s|$)/u.test(result.command)
+    && result.output.includes("permission: 'ChildProcess'")
+    && result.output.includes('ERR_ACCESS_DENIED');
 }
 
 /** `fake` reads its script from the file named in VLYN_FAKE_SCRIPT. It exists for tests of the CLI. */

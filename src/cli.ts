@@ -84,7 +84,8 @@ const usage = `Usage: vlyn <judge|calibration|report|tui|auto|resume|runs|actors
   --tasks PATH With judge: measurement over a task file (needs --execute and --budget to spend anything)
   --agents A,B With judge --tasks: agents to run (default claude,codex,pi)
   --runs N     With judge --tasks: runs per task and agent (default from the task file, else 3)
-  --budget USD With judge --tasks: hard cost cap in US dollars; required with --execute
+  --budget USD With judge --tasks: counted-spend threshold, not a provider spending cap; required with --execute
+  --prior-spend USD Counted spend from earlier attempts; defaults to 0
   --baseline C With judge: external verifier command for the baseline predictor (JSON verdict only)
   --execute    With judge --tasks: really run. Without it the plan is printed and nothing runs
   --out PATH   With report: write the markdown to a file
@@ -130,7 +131,7 @@ async function main(): Promise<number> {
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' },
-      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, agents: { type: 'string' }, runs: { type: 'string' }, budget: { type: 'string' }, baseline: { type: 'string' }, execute: { type: 'boolean' }, out: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, agents: { type: 'string' }, runs: { type: 'string' }, budget: { type: 'string' }, 'prior-spend': { type: 'string' }, baseline: { type: 'string' }, execute: { type: 'boolean' }, out: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -165,18 +166,20 @@ async function main(): Promise<number> {
       const plan = planMeasurement(file, agents, runs);
       if (!values.execute) {
         console.log(`Plan: ${file.tasks.length} tasks x ${agents.length} agents (${agents.join(', ')}) x ${runs} runs = ${plan.length} runs. Nothing was run.`);
-        console.log('Add --execute --budget USD to run it. The budget is a hard cap; runs without a reported cost count as 1 USD each.');
+        console.log('Add --execute --budget USD to run it. This is a counted-spend threshold, not a hard cap; runs without a reported cost count as 1 USD each.');
         return 0;
       }
+      console.error('Budget is a counted-spend threshold, not a provider spending cap. Previous attempts are included only via --prior-spend; costs may exceed the threshold.');
       const summary = await runMeasurement({
         file, directory, agents, runs, budgetUsd: Number(values.budget ?? 0),
+        priorSpendUsd: Number(values['prior-spend'] ?? 0),
         ...(values.baseline ? { baseline: values.baseline } : {}),
         ...(values.timeout ? { timeoutMs: parseDuration(values.timeout) as number } : {}),
         ...(values.home ? { home: values.home } : {}),
         requireSandbox: !values['no-require-sandbox'],
         onRun: done => console.error(`${done.agent} ${done.taskId} #${done.rep}: ${done.result.verdict}`),
       });
-      console.log(values.json ? JSON.stringify(summary, null, 2) : `Ran ${summary.executed} of ${summary.planned} runs, cost counted ${summary.spentUsd.toFixed(2)} USD${summary.stoppedByBudget ? ' (stopped by the budget cap)' : ''}. Run vlyn report.`);
+      console.log(values.json ? JSON.stringify(summary, null, 2) : `Ran ${summary.executed} of ${summary.planned} runs, cost counted ${summary.spentUsd.toFixed(2)} USD${summary.stoppedByBudget ? ' (stopped by the budget threshold)' : ''}. Run vlyn report.`);
       return 0;
     } catch (cause) {
       console.error(display(cause instanceof Error ? cause.message : String(cause)));

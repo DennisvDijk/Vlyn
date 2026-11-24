@@ -297,3 +297,37 @@ test('the report counts conflict recognition, false alarms and cost, and renders
   assert.match(markdown, /\| Predictor \| n \| Brier/u);
   assert.match(markdown, /Decision rule applied/u);
 });
+
+test('a Node test runner denied child process access is not scored as a test failure', async (context) => {
+  const { planLaunch } = await import('../src/sandbox.ts');
+  const { dir, file } = await taskFolder(context);
+  const home = await tempDir(context, 'vlyn-home-');
+  await writeFiles(dir, { 'fixtures/a/check.test.mjs': "import { test } from 'node:test'; test('ok', () => {});\n", 'accept/a/accept.test.mjs': "import { test } from 'node:test'; test('ok', () => {});\n" });
+  const command = 'node --test check.test.mjs';
+  const manifest = { read: [], write: [], commands: [], network: 'none' as const, endpoints: [], grants: [] };
+  if (planLaunch(command, dir, manifest).isolation.driver !== 'node-permission') return context.skip('requires Node permission sandbox');
+  file.tasks[0]!.check = command;
+  file.tasks[0]!.accept = 'node --test .vlyn-accept/accept.test.mjs';
+  const previousContext = process.env.NODE_TEST_CONTEXT;
+  delete process.env.NODE_TEST_CONTEXT;
+  try {
+    await runMeasurement({ file, directory: dir, agents: [adapterFixing(true)], runs: 1, budgetUsd: 2, home, requireSandbox: false });
+  } finally {
+    if (previousContext !== undefined) process.env.NODE_TEST_CONTEXT = previousContext;
+  }
+  const journal = new Journal(home);
+  try {
+    const [row] = reportRows(journal.db);
+    assert.equal(row?.verdict, 'unverified');
+    assert.equal(row?.r, undefined);
+  } finally { journal.close(); }
+});
+
+test('prior counted spend reduces the budget available to a resumed measurement', async (context) => {
+  const { dir, file } = await taskFolder(context);
+  const home = await tempDir(context, 'vlyn-home-');
+  const summary = await runMeasurement({ file, directory: dir, agents: [adapterFixing(true)], runs: 2, budgetUsd: 5, priorSpendUsd: 4.5, home, requireSandbox: false });
+  assert.equal(summary.executed, 0);
+  assert.equal(summary.stoppedByBudget, true);
+  assert.equal(summary.spentUsd, 4.5);
+});
