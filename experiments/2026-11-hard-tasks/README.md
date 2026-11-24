@@ -1,6 +1,6 @@
 # Hard-task measurement: task set and commands
 
-Status: **not run**. No key is configured, so nothing here has called a live model. This folder holds the task format, three example tasks and the exact commands. The decision rules are in [docs/VALIDATION.md](../../docs/VALIDATION.md).
+Status: **full measurement not run**. A limited live pilot used these examples; it is too small to apply the decision rules. This folder holds the task format, three example tasks and the exact commands. The decision rules are in [docs/VALIDATION.md](../../docs/VALIDATION.md).
 
 ## Example tasks
 
@@ -14,17 +14,18 @@ Status: **not run**. No key is configured, so nothing here has called a live mod
 
 The expected success rate per task is an estimate, not a measurement: I expect current agents to get the visible test right almost always and the held-out edge cases right in roughly 30–70% of runs, because each held-out test asks for 4–7 separate details the goal states in one sentence. The pilot (23 Nov 2026) showed the opposite risk, tasks that were too easy (35 of 35 right), so the first real run should drop any task that all agents solve in all runs, and any that none solves.
 
-## Choosing the other 17 or more tasks
+## Choosing the remaining tasks
 
 - Aim for tasks on which an agent is expected to score 30–70%. Write the visible check so that it passes with a plausible, incomplete solution, and put the details that make the solution correct in the held-out test.
 - Use your own repositories or real issues from public repositories. Public issues may be in a model's training data (contamination): prefer issues fixed after the models' cutoff, or your private repositories.
 - For a repository task, use `repo` and `commit` instead of `fixture`, with the commit just before the fix. The held-out test is the test from the fix, copied into `acceptDir`.
+- The design specifies 20 ordinary hard tasks and three conflict tasks. The current examples include two ordinary tasks and one conflict task, leaving 18 ordinary and two conflict tasks to select or create.
 - Keep three tasks with a contradicting visible test (`expected: "conflict"`).
 - Each task must run in under 20 minutes and need no network after checkout.
 
 ## Commands
 
-Nothing below has been run. Needs: the agents installed and signed in, and a key for each (see the PR for who provides them).
+The full command below has not been run. It needs installed and authenticated agents, a validated external baseline and an approved budget.
 
 ```sh
 # 1. See the plan. Runs nothing, costs nothing.
