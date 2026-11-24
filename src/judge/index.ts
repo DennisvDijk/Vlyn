@@ -9,6 +9,7 @@ import { Journal } from '../durable.ts';
 import { gitOutput, owns } from '../parallel.ts';
 import { posture, runGoverned } from '../sandbox.ts';
 import { createAdapter } from './adapters.ts';
+import { runBaseline } from './baseline.ts';
 import type { FakeScript } from './adapters.ts';
 import { chooseModel, featuresOf, handModel, parseProbability, predict, selfQuestion } from './calibration.ts';
 import type { Features } from './calibration.ts';
@@ -28,6 +29,10 @@ import type {
 
 export * from './types.ts';
 export * from './calibration.ts';
+export * from './report.ts';
+export * from './tasks.ts';
+export { reportRows } from './store.ts';
+export { baselineInstalled, parseBaseline } from './baseline.ts';
 export { scoredRows } from './store.ts';
 export { createAdapter, fakeAdapter, taskPrompt } from './adapters.ts';
 export type { FakeScript } from './adapters.ts';
@@ -244,7 +249,16 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
         pSelf = selfConfidence;
       }
     }
-    predictions = { ...(pSelf === undefined ? {} : { self: pSelf }), process: pProcess, processModel: model.version };
+    let pBaseline: number | undefined;
+    if (options.baseline?.trim()) {
+      pBaseline = crashed ? 0 : (await runBaseline(options.baseline, worktree, requireSandbox)).p;
+    }
+    predictions = {
+      ...(pSelf === undefined ? {} : { self: pSelf }),
+      process: pProcess,
+      processModel: model.version,
+      ...(pBaseline === undefined ? {} : { baseline: pBaseline }),
+    };
 
     if (journal) {
       insertJudgeRun(journal.db, {
@@ -283,6 +297,7 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
       for (const [source, p, version, detail] of [
         ['process', pProcess, model.version, JSON.stringify(features)] as const,
         ...(pSelf === undefined ? [] : [['self', pSelf, 'asked-after-run', undefined] as const]),
+        ...(pBaseline === undefined ? [] : [['baseline', pBaseline, 'external-verifier', undefined] as const]),
       ]) {
         insertPrediction(journal.db, { runId: id, source, p, features: detail, modelVersion: version });
         log.append({

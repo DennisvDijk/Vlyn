@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
-import { realpath } from 'node:fs/promises';
+import { realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs, styleText } from 'node:util';
 import { planOrder } from './model.ts';
@@ -17,7 +17,7 @@ import { SecurityLog } from './broker.ts';
 import { manifestFor } from './capabilities.ts';
 import { Journal, applyToBranch, converge, defaultHome, executeRun } from './durable.ts';
 import { runEval } from './eval.ts';
-import { JudgeRefusal, calibrationText, exitCodes, exitInternal, exitRefused, judge, scoreAll, scoredRows } from './judge/index.ts';
+import { JudgeRefusal, calibrationText, computeStats, exitCodes, exitInternal, exitRefused, judge, planMeasurement, readTaskFile, reportMarkdown, reportRows, runMeasurement, scoreAll, scoredRows } from './judge/index.ts';
 import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
 import { planGate, preMortem } from './premortem.ts';
 import { planTasks } from './planner.ts';
@@ -33,9 +33,10 @@ function parseDuration(text: string | undefined): number | undefined {
   return Math.round(Number(match[1]) * unit);
 }
 
-const usage = `Usage: vlyn <judge|calibration|tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <judge|calibration|report|tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   judge        Run an existing coding agent (--agent claude|codex|pi) in a worktree and return a verdict. Exit 0 completed, 1 failed, 2 unverified, 3 refused, 4 error, 5 conflict
+  report       Markdown summary of measured runs (how often "done" was right, Brier/AUROC per predictor, decision rules)
   calibration  Brier, ECE and AUROC per predictor (p_self, p_process) from judged runs that have a --accept outcome
   tui          (frozen) Interactive session: state a goal, review the generated plan, watch agents work
   auto         (frozen) Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
@@ -80,6 +81,13 @@ const usage = `Usage: vlyn <judge|calibration|tui|auto|resume|runs|actors|lesson
   --protect P  With judge: extra protected paths, comma separated (tests, test config, CI, lockfiles are always protected)
   --timeout T  With judge: agent time limit, e.g. 20m, 90s or a number of seconds (default 20m)
   --allow-noop With judge: an empty diff is not unverified
+  --tasks PATH With judge: measurement over a task file (needs --execute and --budget to spend anything)
+  --agents A,B With judge --tasks: agents to run (default claude,codex,pi)
+  --runs N     With judge --tasks: runs per task and agent (default from the task file, else 3)
+  --budget USD With judge --tasks: hard cost cap in US dollars; required with --execute
+  --baseline C With judge: external verifier command for the baseline predictor (JSON verdict only)
+  --execute    With judge --tasks: really run. Without it the plan is printed and nothing runs
+  --out PATH   With report: write the markdown to a file
   --accept CMD With judge: held-out acceptance check, run only after the predictions are written; only pass or fail is kept
   --accept-dir D  With judge: folder with the held-out tests, copied in as .vlyn-accept/ only after the predictions
   --no-require-sandbox  With judge: run the check even when this OS cannot isolate it
@@ -122,7 +130,7 @@ async function main(): Promise<number> {
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' },
-      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, agents: { type: 'string' }, runs: { type: 'string' }, budget: { type: 'string' }, baseline: { type: 'string' }, execute: { type: 'boolean' }, out: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -137,6 +145,44 @@ async function main(): Promise<number> {
   const provider = config ? createProvider(config, catalog ? { catalog } : {}) : undefined;
   const coding = config ? createProvider(config, { ...(catalog ? { catalog } : {}), tools: true, stream: true }) : undefined;
   const needModel = (what: string) => { if (!provider) throw new Error(`${what} needs a model. ${describeSetup()}`); return provider; };
+  if (positionals[0] === 'report') {
+    const journal = new Journal(values.home);
+    try {
+      const markdown = reportMarkdown(computeStats(reportRows(journal.db)));
+      if (values.out) await writeFile(values.out, markdown);
+      else console.log(markdown);
+      return 0;
+    } finally {
+      journal.close();
+    }
+  }
+  if (positionals[0] === 'judge' && values.tasks) {
+    try {
+      const { file, directory } = await readTaskFile(values.tasks);
+      const agents = (values.agents ?? 'claude,codex,pi').split(',').map(item => item.trim()).filter(Boolean);
+      const runs = values.runs ? Number(values.runs) : file.runs ?? 3;
+      if (!Number.isInteger(runs) || runs < 1) throw new JudgeRefusal('--runs must be a whole number of at least 1.');
+      const plan = planMeasurement(file, agents, runs);
+      if (!values.execute) {
+        console.log(`Plan: ${file.tasks.length} tasks x ${agents.length} agents (${agents.join(', ')}) x ${runs} runs = ${plan.length} runs. Nothing was run.`);
+        console.log('Add --execute --budget USD to run it. The budget is a hard cap; runs without a reported cost count as 1 USD each.');
+        return 0;
+      }
+      const summary = await runMeasurement({
+        file, directory, agents, runs, budgetUsd: Number(values.budget ?? 0),
+        ...(values.baseline ? { baseline: values.baseline } : {}),
+        ...(values.timeout ? { timeoutMs: parseDuration(values.timeout) as number } : {}),
+        ...(values.home ? { home: values.home } : {}),
+        requireSandbox: !values['no-require-sandbox'],
+        onRun: done => console.error(`${done.agent} ${done.taskId} #${done.rep}: ${done.result.verdict}`),
+      });
+      console.log(values.json ? JSON.stringify(summary, null, 2) : `Ran ${summary.executed} of ${summary.planned} runs, cost counted ${summary.spentUsd.toFixed(2)} USD${summary.stoppedByBudget ? ' (stopped by the budget cap)' : ''}. Run vlyn report.`);
+      return 0;
+    } catch (cause) {
+      console.error(display(cause instanceof Error ? cause.message : String(cause)));
+      return cause instanceof JudgeRefusal ? exitRefused : exitInternal;
+    }
+  }
   if (positionals[0] === 'judge') {
     try {
       const list = (text: string | undefined) =>
@@ -154,6 +200,7 @@ async function main(): Promise<number> {
         timeoutMs: parseDuration(values.timeout),
         allowNoop: values['allow-noop'] ?? false,
         accept: values.accept,
+        baseline: values.baseline,
         acceptDir: values['accept-dir'],
         requireSandbox: !values['no-require-sandbox'],
         home: values.home,

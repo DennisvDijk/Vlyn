@@ -81,6 +81,14 @@ Predictions and outcomes are rows in `predictions` and `outcomes` and also in th
 
 `vlyn calibration` prints, per predictor, the number of runs, the Brier score, ECE and AUROC. AUROC needs at least 3 failures and 3 successes; otherwise it says "AUROC niet te berekenen".
 
+## Measure many tasks: `--tasks` and `report`
+
+`vlyn judge --tasks tasks.json --agents claude,codex,pi --runs 3 --budget 25 --execute` runs every task with every agent, N times, each in a fresh repository built from the task's `fixture` or `repo` + `commit`. Without `--execute` it prints the plan and runs nothing. The budget (US dollars) is a hard cap: runs that report no cost count as 1 USD. See [experiments/2026-11-hard-tasks](../../experiments/2026-11-hard-tasks/README.md) for the format and commands.
+
+`--baseline CMD` also runs an existing verifier as an external command in the sandbox and records its JSON verdict as the predictor `baseline`. If the command is not installed, or prints no readable verdict, the baseline is skipped.
+
+`vlyn report [--out FILE]` prints markdown: how often "done" was right with a 95% interval, Brier and AUROC per predictor, `conflict` recognition, cost, and the outcome of the pre-registered decision rules.
+
 ## Record
 
 Each run is written to the journal (`judge_runs`) and to the hash-chained audit log (`judge.start`, `judge.verdict`). `vlyn audit RUN_ID` shows it.

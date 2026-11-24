@@ -58,7 +58,9 @@ The 5 runs not counted as "DONE" all reported BLOCKED on a conflict task: `09-le
    - cost per run.
 5. **Decide**, using the rules below.
 
-`vlyn judge --tasks` and `vlyn report` (PR 3) run and summarise this. Cost cap for a real run: €25. The real measurement runs only with configured keys; until then only the task set and the exact commands exist.
+`vlyn judge --tasks` and `vlyn report` run and summarise this. Cost cap for a real run: €25 (`--budget` is in US dollars, a hard cap). The real measurement runs only with configured keys; until then only the task format, three example tasks and the exact commands exist: see [experiments/2026-11-hard-tasks](../experiments/2026-11-hard-tasks/README.md).
+
+The report applies the rules mechanically and only when there are at least 20 "done" claims with an accept outcome (a minimum added in PR 3). Below that it says "not enough data".
 
 ## Decision rules (fixed in advance)
 
@@ -73,4 +75,4 @@ For PR 6 and 7 a second measurement applies: the accept rate per task type must 
 
 ## Results on hard tasks
 
-Not yet run.
+Not yet run. The report format is produced by `vlyn report`; paste its output here after the run.
