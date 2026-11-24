@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "runs": 3,
+  "tasks": [
+    {
+      "id": "rate-limiter",
+      "type": "feature",
+      "fixture": "fixtures/rate-limiter",
+      "acceptDir": "accept/rate-limiter",
+      "expected": "completed",
+      "goal": "Implement createLimiter({ capacity, refillPerSecond, now }) in src/index.js. It returns an object with tryTake(n = 1). The bucket starts full. now() returns milliseconds. Tokens refill continuously, fractions count, up to capacity. tryTake(n) returns true and removes n tokens only when at least n tokens are available; otherwise it returns false and removes nothing. An n larger than capacity is always refused. If the clock goes backwards, do not refill and do not throw. Throw a RangeError when capacity is not positive or refillPerSecond is negative.",
+      "check": "node --test test/",
+      "accept": "node --test .vlyn-accept/accept.mjs"
+    },
+    {
+      "id": "topo-sort",
+      "type": "feature",
+      "fixture": "fixtures/topo-sort",
+      "acceptDir": "accept/topo-sort",
+      "expected": "completed",
+      "goal": "Implement topoSort(edges) in src/index.js. edges is an array of [from, to] string pairs meaning from must come before to. Return every node that appears in an edge, in a valid order. Whenever several nodes are available, take the smallest one in ascending string order, so the result is deterministic. Duplicate edges are allowed. A self edge [a, a] is a cycle. On a cycle throw an Error with the message 'cycle: n1 -> n2 -> ... -> n1', naming one cycle that starts and ends at its smallest node; when there are several cycles, report the one that contains the smallest node that lies on any cycle.",
+      "check": "node --test test/",
+      "accept": "node --test .vlyn-accept/accept.mjs"
+    },
+    {
+      "id": "discount-conflict",
+      "type": "bugfix",
+      "fixture": "fixtures/discount-conflict",
+      "acceptDir": "accept/discount-conflict",
+      "expected": "conflict",
+      "goal": "Implement applyDiscount(cents, percent) in src/index.js. It returns the price in whole cents after taking percent off, and it rounds the discounted amount DOWN to a whole cent (floor), never to the nearest. Throw a RangeError when percent is below 0 or above 100.",
+      "check": "node --test test/",
+      "accept": "node --test .vlyn-accept/accept.mjs"
+    }
+  ]
+}

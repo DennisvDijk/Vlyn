@@ -95,6 +95,11 @@ export type JudgeOptions = {
    * only after the predictions are written.
    */
   acceptDir?: string | undefined;
+  /**
+   * External verifier command for the `baseline` predictor, run in the sandbox in the worktree before the predictions are
+   * written. Only its JSON verdict is read. Skipped when the program is not installed.
+   */
+  baseline?: string | undefined;
   /** Called right before the accept check starts. For tests of the ordering. */
   onAccept?: (() => void) | undefined;
   signal?: AbortSignal | undefined;
@@ -116,7 +121,7 @@ export type JudgeResult = {
   usage: ModelUsage | undefined;
   selfConfidence: number | undefined;
   /** Probabilities that were written before the accept check ran. Absent keys mean no prediction. */
-  predictions: { self?: number; process: number; processModel: string } | undefined;
+  predictions: { self?: number; process: number; processModel: string; baseline?: number } | undefined;
   /** Only pass or fail of the held-out check. `ran` is false when it could not start. */
   accept: { ran: boolean; passed: boolean } | undefined;
   startedAt: string;

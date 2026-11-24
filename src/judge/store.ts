@@ -11,6 +11,73 @@ export function ensureJudgeSchema(db: DatabaseSync): void {
     run_id TEXT NOT NULL, source TEXT NOT NULL, p REAL NOT NULL, features TEXT, model_version TEXT, at TEXT NOT NULL)`);
   db.exec(`CREATE TABLE IF NOT EXISTS outcomes (
     run_id TEXT NOT NULL, kind TEXT NOT NULL, r INTEGER NOT NULL, at TEXT NOT NULL)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS task_runs (
+    run_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, task_type TEXT NOT NULL, expected TEXT NOT NULL,
+    rep INTEGER NOT NULL, claimed_done INTEGER NOT NULL)`);
+}
+
+export function insertTaskRun(
+  db: DatabaseSync,
+  row: { runId: string; taskId: string; taskType: string; expected: string; rep: number; claimedDone: boolean },
+): void {
+  ensureJudgeSchema(db);
+  db.prepare(
+    'INSERT INTO task_runs (run_id, task_id, task_type, expected, rep, claimed_done) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(row.runId, row.taskId, row.taskType, row.expected, row.rep, row.claimedDone ? 1 : 0);
+}
+
+export type ReportRow = {
+  runId: string;
+  agent: string;
+  taskId: string;
+  taskType: string;
+  expected: string;
+  verdict: string;
+  claimedDone: boolean;
+  /** Result of the accept check, absent when it did not run. */
+  r: 0 | 1 | undefined;
+  predictions: { source: string; p: number }[];
+  usage: { inputTokens?: number; outputTokens?: number; costUsd?: number } | undefined;
+};
+
+/** Every measured run (rows in `task_runs`) with its verdict, predictions, accept outcome and usage. */
+export function reportRows(db: DatabaseSync): ReportRow[] {
+  ensureJudgeSchema(db);
+  const runs = db
+    .prepare(
+      `SELECT t.run_id AS id, j.agent AS agent, t.task_id AS task_id, t.task_type AS task_type, t.expected AS expected,
+        j.verdict AS verdict, t.claimed_done AS claimed, j.usage AS usage,
+        (SELECT o.r FROM outcomes o WHERE o.run_id = t.run_id AND o.kind = 'accept' ORDER BY o.at LIMIT 1) AS r
+       FROM task_runs t JOIN judge_runs j ON j.id = t.run_id ORDER BY j.started_at`,
+    )
+    .all() as {
+    id: string; agent: string; task_id: string; task_type: string; expected: string; verdict: string;
+    claimed: number; usage: string | null; r: number | null;
+  }[];
+  const predictionQuery = db.prepare('SELECT source, p FROM predictions WHERE run_id = ?');
+  return runs.map((run) => {
+    let usage: ReportRow['usage'];
+    try {
+      usage = run.usage ? (JSON.parse(run.usage) as ReportRow['usage']) : undefined;
+    } catch {
+      usage = undefined;
+    }
+    return {
+      runId: run.id,
+      agent: run.agent,
+      taskId: run.task_id,
+      taskType: run.task_type,
+      expected: run.expected,
+      verdict: run.verdict,
+      claimedDone: run.claimed === 1,
+      r: run.r === null ? undefined : run.r === 1 ? 1 : 0,
+      predictions: (predictionQuery.all(run.id) as { source: string; p: number }[]).map((row) => ({
+        source: row.source,
+        p: row.p,
+      })),
+      usage,
+    };
+  });
 }
 
 export function insertPrediction(
