@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
+  quality:
+    name: Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -32,24 +32,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Lint
         run: npm run lint
-
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-      - name: Install locked dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Typecheck
+        if: ${{ !cancelled() }}
         run: npm run check
 
   test:
@@ -126,16 +110,15 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [lint, typecheck, test, audit, coverage]
+    needs: [quality, test, audit, coverage]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:
       - name: Require every job to pass
         env:
-          LINT: ${{ needs.lint.result }}
-          TYPECHECK: ${{ needs.typecheck.result }}
+          QUALITY: ${{ needs.quality.result }}
           TEST: ${{ needs.test.result }}
           AUDIT: ${{ needs.audit.result }}
           COVERAGE: ${{ needs.coverage.result }}
-        run: test "$LINT" = success && test "$TYPECHECK" = success && test "$TEST" = success && test "$AUDIT" = success && test "$COVERAGE" = success
+        run: test "$QUALITY" = success && test "$TEST" = success && test "$AUDIT" = success && test "$COVERAGE" = success
