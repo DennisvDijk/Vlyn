@@ -299,10 +299,17 @@ export async function runCodingAgent(options: {
       batch.push({ action: parsed });
       messages.push({ role: 'assistant', content: response });
     }
-    const results = await Promise.all(batch.map(async item => {
+    const runItem = async (item: typeof batch[number]) => {
       try { return { ...item, result: await apply(item.action) }; }
       catch (error) { return { ...item, result: { error: error instanceof Error ? error.message : String(error) } }; }
-    }));
+    };
+    let results: Awaited<ReturnType<typeof runItem>>[];
+    if (batch.some(item => ['replace', 'create', 'check', 'finish'].includes(String(item.action.action)))) {
+      results = [];
+      for (const item of batch) results.push(await runItem(item));
+    } else {
+      results = await Promise.all(batch.map(runItem));
+    }
     if (completed) break;
     if (streamed?.toolCalls.length) {
       for (const item of results) messages.push({ role: 'tool', content: truncateToolResult(item.result), ...(item.id ? { toolCallId: item.id } : {}) });
