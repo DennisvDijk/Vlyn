@@ -97,7 +97,7 @@ export function redact(text: string, secrets: string[]): string {
   return out;
 }
 
-export function seatbeltProfile(cwd: string): string {
+export function seatbeltProfile(cwd: string, readOnlyDirs: string[] = []): string {
   const quote = (value: string) => JSON.stringify(value);
   return [
     '(version 1)',
@@ -112,12 +112,13 @@ export function seatbeltProfile(cwd: string): string {
     '(allow file-read-metadata)',
     '(allow file-read* (subpath "/usr") (subpath "/bin") (subpath "/System") (subpath "/Library") (subpath "/opt/homebrew") (subpath "/dev"))',
     `(allow file-read* (subpath ${quote(cwd)}))`,
+    ...readOnlyDirs.map(dir => `(allow file-read* (subpath ${quote(dir)}))`),
     `(allow file-write* (subpath ${quote(cwd)}))`,
     '(deny network*)',
   ].join('\n');
 }
 
-export function bubblewrapArgs(cwd: string, inner: string[]): string[] {
+export function bubblewrapArgs(cwd: string, inner: string[], readOnlyDirs: string[] = []): string[] {
   return [
     '--unshare-net', '--unshare-pid', '--die-with-parent',
     '--proc', '/proc', '--dev', '/dev',
@@ -126,6 +127,7 @@ export function bubblewrapArgs(cwd: string, inner: string[]): string[] {
     '--ro-bind-try', '/lib64', '/lib64',
     '--ro-bind-try', '/bin', '/bin',
     '--bind', cwd, cwd,
+    ...readOnlyDirs.flatMap(dir => ['--ro-bind', dir, dir]),
     '--chdir', cwd,
     '--',
     ...inner,
@@ -140,15 +142,15 @@ export type Launch = {
 };
 
 /** Choose the strongest confinement that is actually present. */
-export function planLaunch(command: string, cwd: string, manifest: CapabilityManifest): Launch {
+export function planLaunch(command: string, cwd: string, manifest: CapabilityManifest, readOnlyDirs: string[] = []): Launch {
   void manifest;
   const tokens = splitCommand(command);
   const nodeCmd = (tokens[0] === 'node' || tokens[0] === 'node.exe') && nodePermissionAvailable();
-  const permission = ['--permission', `--allow-fs-read=${cwd}`, `--allow-fs-write=${cwd}`];
+  const permission = ['--permission', ...[cwd, ...readOnlyDirs].map(dir => `--allow-fs-read=${dir}`), `--allow-fs-write=${cwd}`];
   const nodeInner = nodeCmd ? [process.execPath, ...permission, ...tokens.slice(1)] : tokens[0] === 'node' || tokens[0] === 'node.exe' ? [process.execPath, ...tokens.slice(1)] : tokens;
   if (process.platform === 'linux' && bubblewrapAvailable()) {
     return {
-      file: 'bwrap', args: bubblewrapArgs(cwd, nodeInner), shell: false,
+      file: 'bwrap', args: bubblewrapArgs(cwd, nodeInner, readOnlyDirs), shell: false,
       isolation: { driver: 'bubblewrap', filesystem: 'bubblewrap', network: 'bubblewrap', landlock: false, seccomp: false, isolates: true },
     };
   }
@@ -164,7 +166,7 @@ export function planLaunch(command: string, cwd: string, manifest: CapabilityMan
   }
   if (process.platform === 'darwin' && seatbeltAvailable()) {
     return {
-      file: 'sandbox-exec', args: ['-p', seatbeltProfile(cwd), '--', ...tokens], shell: false,
+      file: 'sandbox-exec', args: ['-p', seatbeltProfile(cwd, readOnlyDirs), '--', ...tokens], shell: false,
       isolation: { driver: 'seatbelt', filesystem: 'seatbelt', network: 'seatbelt', landlock: false, seccomp: false, isolates: true },
     };
   }
@@ -220,9 +222,13 @@ export async function runGoverned(options: {
   manifest: CapabilityManifest;
   env?: NodeJS.ProcessEnv;
   requireSandbox?: boolean;
+  readOnlyDirs?: string[];
 }): Promise<GovernedResult> {
   const env = options.env ?? process.env;
-  const launch = planLaunch(options.command, options.cwd, options.manifest);
+  const launch = planLaunch(options.command, options.cwd, options.manifest, options.readOnlyDirs);
+  if (options.readOnlyDirs?.length && launch.isolation.filesystem === 'none') {
+    throw new Error('Refusing external baseline directory: this sandbox cannot enforce read-only file access.');
+  }
   if (manifestBlocksNetwork(options.manifest) && launch.isolation.network === 'none' && options.requireSandbox) {
     throw new Error(`Refusing ${options.command}: this OS has no network sandbox (${launch.isolation.driver}). Landlock and seccomp are not active.`);
   }

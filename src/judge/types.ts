@@ -100,6 +100,8 @@ export type JudgeOptions = {
    * written. Only its JSON verdict is read. Skipped when the program is not installed.
    */
   baseline?: string | undefined;
+  /** Explicit read-only installation directory for the external verifier. */
+  baselineDir?: string | undefined;
   /** Called right before the accept check starts. For tests of the ordering. */
   onAccept?: (() => void) | undefined;
   signal?: AbortSignal | undefined;

@@ -166,6 +166,7 @@ export type MeasurementOptions = {
   assumedUnknownCostUsd?: number;
   timeoutMs?: number;
   baseline?: string;
+  baselineDir?: string;
   home?: string;
   requireSandbox?: boolean;
   isolates?: () => boolean;
@@ -215,6 +216,7 @@ export async function runMeasurement(options: MeasurementOptions): Promise<Measu
         taskType: task.type,
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.baseline ? { baseline: options.baseline } : {}),
+        ...(options.baselineDir ? { baselineDir: options.baselineDir } : {}),
         ...(options.home ? { home: options.home } : {}),
         ...(options.requireSandbox !== undefined ? { requireSandbox: options.requireSandbox } : {}),
         ...(options.isolates ? { isolates: options.isolates } : {}),
