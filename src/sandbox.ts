@@ -106,6 +106,10 @@ export function seatbeltProfile(cwd: string): string {
     '(allow process-fork)',
     '(allow signal (target self))',
     '(allow sysctl-read)',
+    // Node needs to inspect the root directory during startup; this does not allow reading its descendants.
+    '(allow file-read* (literal "/"))',
+    // Resolving the worktree path requires metadata for its parent directories.
+    '(allow file-read-metadata)',
     '(allow file-read* (subpath "/usr") (subpath "/bin") (subpath "/System") (subpath "/Library") (subpath "/opt/homebrew") (subpath "/dev"))',
     `(allow file-read* (subpath ${quote(cwd)}))`,
     `(allow file-write* (subpath ${quote(cwd)}))`,

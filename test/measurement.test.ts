@@ -213,7 +213,7 @@ test('the baseline adapter reads only a JSON verdict, and is skipped when missin
   assert.equal(baselineInstalled('vlyn-no-such-verifier-tool --json'), false);
 
   const { dir, file } = await taskFolder(context);
-  await writeFiles(dir, { 'verifier.mjs': "console.log(JSON.stringify({ verdict: 'passed', note: 'ignored' }));\n" });
+  await writeFiles(dir, { 'fixtures/a/verifier.mjs': "console.log(JSON.stringify({ verdict: 'passed', note: 'ignored' }));\n" });
   const run = async (baseline: string) => {
     const home = await tempDir(context, 'vlyn-home-');
     await runMeasurement({ file, directory: dir, agents: [adapterFixing(true)], runs: 1, budgetUsd: 5, home, requireSandbox: false, baseline });
@@ -224,7 +224,7 @@ test('the baseline adapter reads only a JSON verdict, and is skipped when missin
       journal.close();
     }
   };
-  assert.deepEqual(await run(`node ${join(dir, 'verifier.mjs')}`), ['baseline', 'process', 'self']);
+  assert.deepEqual(await run('node verifier.mjs'), ['baseline', 'process', 'self']);
   assert.deepEqual(await run('vlyn-no-such-verifier-tool --json'), ['process', 'self']);
   assert.deepEqual(await run('node -e "console.log(1)"'), ['process', 'self']);
 });
