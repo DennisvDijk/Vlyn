@@ -8,7 +8,8 @@ Flags common to several commands: `--json`, `--home PATH` (journal directory, el
 
 | Command | What it does |
 | --- | --- |
-| `vlyn judge [dir] --agent claude\|codex\|pi --goal TEXT --check CMD [--files A,B] [--protect A,B] [--timeout 20m] [--allow-noop] [--no-require-sandbox]` | Run an existing agent in a detached worktree and print a verdict. Exit 0 `completed`, 1 `failed`, 2 `unverified`, 3 refused, 4 internal error, 5 `conflict`. See [Judge](../how-to/judge.md). |
+| `vlyn judge [dir] --agent claude\|codex\|pi --goal TEXT --check CMD [--files A,B] [--protect A,B] [--timeout 20m] [--allow-noop] [--no-require-sandbox]` | Run an existing agent in a detached worktree and print a verdict. Exit 0 `completed`, 1 `failed`, 2 `unverified`, 3 refused, 4 internal error, 5 `conflict`. See [Judge](../how-to/judge.md). `--accept CMD` and `--accept-dir DIR` add the held-out check and the predictions. |
+| `vlyn calibration [--json]` | Brier, ECE and AUROC per predictor (`self`, `process`) from judged runs that have an accept outcome. |
 
 ## Goal runs
 

@@ -12,7 +12,7 @@ The direction is in [ADR 0003](adr/0003-measurement-first.md): measure first, th
 | --- | --- | --- | --- |
 | PR 0 | `cursor/reposition-91d7` | Reposition: README, `FROZEN.md`, design, research and validation docs, ADR 0003, STATE and ROADMAP, `(frozen)` labels in `--help` | in PR |
 | PR 1 | `cursor/judge-core-91d7` | `src/judge/` library and thin `vlyn judge` CLI. Adapters `fake`, `claude`, `codex`, `pi`. Verdicts `completed`, `unverified`, `conflict`, `failed`. `--protect`, skip detection. `judge_runs` and audit | in review |
-| PR 2 | `cursor/judge-calibration-91d7` | Held-out `--accept`, `p_self`, `p_process`, tables `predictions` and `outcomes`, `vlyn calibration` (Brier, ECE, AUROC) | later |
+| PR 2 | `cursor/judge-calibration-91d7` | Held-out `--accept`, `p_self`, `p_process`, tables `predictions` and `outcomes`, `vlyn calibration` (Brier, ECE, AUROC) | in review |
 | PR 3 | `cursor/measurement-91d7` | `vlyn judge --tasks`, baseline adapter, `vlyn report`, example task set and commands for the real measurement | later |
 | Decision | — | Apply the pre-registered rules in [VALIDATION.md](VALIDATION.md). Dennis decides | after PR 3 |
 | PR 4 | — | Sandbox of the agent process and a key with a budget cap | conditional |

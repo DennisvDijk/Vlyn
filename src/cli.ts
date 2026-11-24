@@ -17,7 +17,7 @@ import { SecurityLog } from './broker.ts';
 import { manifestFor } from './capabilities.ts';
 import { Journal, applyToBranch, converge, defaultHome, executeRun } from './durable.ts';
 import { runEval } from './eval.ts';
-import { JudgeRefusal, exitCodes, exitInternal, exitRefused, judge } from './judge/index.ts';
+import { JudgeRefusal, calibrationText, exitCodes, exitInternal, exitRefused, judge, scoreAll, scoredRows } from './judge/index.ts';
 import { LessonStore, applySuggestion, planningMemory, suggestion } from './lessons.ts';
 import { planGate, preMortem } from './premortem.ts';
 import { planTasks } from './planner.ts';
@@ -33,9 +33,10 @@ function parseDuration(text: string | undefined): number | undefined {
   return Math.round(Number(match[1]) * unit);
 }
 
-const usage = `Usage: vlyn <judge|tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
+const usage = `Usage: vlyn <judge|calibration|tui|auto|resume|runs|actors|lessons|eval|converge|apply|audit|models|code|batch|graph|impact|doctor|plan|run|status> [directory|run-id] [options]
 
   judge        Run an existing coding agent (--agent claude|codex|pi) in a worktree and return a verdict. Exit 0 completed, 1 failed, 2 unverified, 3 refused, 4 error, 5 conflict
+  calibration  Brier, ECE and AUROC per predictor (p_self, p_process) from judged runs that have a --accept outcome
   tui          (frozen) Interactive session: state a goal, review the generated plan, watch agents work
   auto         (frozen) Plan tasks from a goal (--goal TEXT) and run them durably in parallel; no task file needed
   resume       (frozen) Continue an interrupted run by id (survives crashes, closed terminals and reboots)
@@ -79,6 +80,8 @@ const usage = `Usage: vlyn <judge|tui|auto|resume|runs|actors|lessons|eval|conve
   --protect P  With judge: extra protected paths, comma separated (tests, test config, CI, lockfiles are always protected)
   --timeout T  With judge: agent time limit, e.g. 20m, 90s or a number of seconds (default 20m)
   --allow-noop With judge: an empty diff is not unverified
+  --accept CMD With judge: held-out acceptance check, run only after the predictions are written; only pass or fail is kept
+  --accept-dir D  With judge: folder with the held-out tests, copied in as .vlyn-accept/ only after the predictions
   --no-require-sandbox  With judge: run the check even when this OS cannot isolate it
   --json       Emit the report as JSON
   --help       Show usage
@@ -119,7 +122,7 @@ async function main(): Promise<number> {
       task: { type: 'string' }, check: { type: 'string' },
       tasks: { type: 'string' }, goal: { type: 'string' }, 'base-url': { type: 'string' }, refresh: { type: 'boolean' }, home: { type: 'string' }, 'plan-only': { type: 'boolean' }, proceed: { type: 'boolean' }, branch: { type: 'string' }, format: { type: 'string' }, file: { type: 'string', multiple: true }, since: { type: 'string' },
       json: { type: 'boolean' }, apply: { type: 'boolean' }, 'require-sandbox': { type: 'boolean' },
-      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      agent: { type: 'string' }, files: { type: 'string' }, protect: { type: 'string' }, timeout: { type: 'string' }, 'allow-noop': { type: 'boolean' }, accept: { type: 'string' }, 'accept-dir': { type: 'string' }, 'no-require-sandbox': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || (!positionals.length && !process.stdin.isTTY)) {
@@ -150,6 +153,8 @@ async function main(): Promise<number> {
         protect: list(values.protect),
         timeoutMs: parseDuration(values.timeout),
         allowNoop: values['allow-noop'] ?? false,
+        accept: values.accept,
+        acceptDir: values['accept-dir'],
         requireSandbox: !values['no-require-sandbox'],
         home: values.home,
       });
@@ -163,6 +168,11 @@ async function main(): Promise<number> {
           console.log(`  new skip markers: ${result.details.skipMarkers.map((hit) => hit.file).join(', ')}`);
         if (result.details.conflicts.length) console.log(`  conflict reported: ${result.details.conflicts.join('; ')}`);
         if (result.details.error) console.log(`  agent: ${result.details.error}`);
+        if (result.predictions) {
+          const p = result.predictions;
+          console.log(`  p_process ${p.process.toFixed(2)} (${p.processModel})${p.self === undefined ? '' : `, p_self ${p.self.toFixed(2)}`}`);
+        }
+        if (result.accept) console.log(`  accept: ${result.accept.ran ? (result.accept.passed ? 'passed' : 'failed') : 'could not run'}`);
         console.log(`  run ${result.id}, ${result.changedFiles.length} changed file(s)`);
       }
       return exitCodes[result.verdict];
@@ -170,6 +180,16 @@ async function main(): Promise<number> {
       const message = cause instanceof Error ? cause.message : String(cause);
       console.error(display(message));
       return cause instanceof JudgeRefusal ? exitRefused : exitInternal;
+    }
+  }
+  if (positionals[0] === 'calibration') {
+    const journal = new Journal(values.home);
+    try {
+      const scores = scoreAll(scoredRows(journal.db));
+      console.log(values.json ? JSON.stringify(scores, null, 2) : calibrationText(scores));
+      return 0;
+    } finally {
+      journal.close();
     }
   }
   if (positionals[0] === 'eval') {

@@ -60,6 +60,27 @@ The task prompt asks the agent to follow the goal, leave tests unchanged, and en
 
 In this phase Vlyn isolates only the **check**, with the platform sandbox that `vlyn doctor` reports. The **agent process is not sandboxed by Vlyn.** Claude Code and Codex run with their own permission settings, and Vlyn starts Claude Code with `--dangerously-skip-permissions` inside the throwaway worktree. Do not point it at a repository whose environment holds secrets you would not give the agent. The worktree limits where the diff lands. It does not limit what the agent process can read or run.
 
+## Calibrate: `--accept`, `p_self`, `p_process`
+
+Pass a held-out acceptance check to learn how often the verdict is right:
+
+```sh
+vlyn judge . --agent claude --goal "..." --check "npm test" \
+  --accept "node .vlyn-accept/accept.mjs" --accept-dir ../held-out/slugify
+vlyn calibration
+```
+
+The order is fixed. The agent runs, Vlyn reruns `--check`, then **two predictions are written** and only then does the accept check run:
+
+- `p_self`: after the run, Vlyn asks the agent in a separate call, outside the task prompt: "Hoe groot is de kans, 0 tot 1, dat een onafhankelijke acceptatietest slaagt?" The agent never sees the accept command, its files or its output.
+- `p_process`: Vlyn's own probability from process signals (check result, protected files, scope, skip markers, reported conflict, empty diff, crash, diff size). It uses hand-set weights (`hand-v1`). From 30 stored outcomes it fits a logistic regression on the journal instead (`lr-n<count>`), without dependencies.
+
+`--accept-dir` is a folder outside the repository. Vlyn copies it into the worktree as `.vlyn-accept/` after the predictions exist. The accept check runs in the sandbox. Only pass or fail is kept: the output is dropped, never stored and never shown to the agent. If the accept check cannot start, there is no outcome and the run is left out of the scores.
+
+Predictions and outcomes are rows in `predictions` and `outcomes` and also in the audit chain (`judge.prediction`, `judge.outcome`), so you can show afterwards that the prediction came first.
+
+`vlyn calibration` prints, per predictor, the number of runs, the Brier score, ECE and AUROC. AUROC needs at least 3 failures and 3 successes; otherwise it says "AUROC niet te berekenen".
+
 ## Record
 
 Each run is written to the journal (`judge_runs`) and to the hash-chained audit log (`judge.start`, `judge.verdict`). `vlyn audit RUN_ID` shows it.
