@@ -196,9 +196,42 @@ function subprocessAdapter(
   build: (input: AgentRunInput, scratch: string) => { file: string; args: string[]; stdin?: string },
   parse: (stdout: string, last: string | undefined) => Parsed,
   usesLastFile = false,
+  buildAsk?: (input: AgentRunInput, prompt: string, scratch: string) => { file: string; args: string[]; stdin?: string },
 ): AgentAdapter {
   return {
     name,
+    ...(buildAsk
+      ? {
+          async ask(input, question, summary) {
+            const scratch = join(tmpdir(), `vlyn-${name}-${randomUUID()}.ask`);
+            const prompt = [
+              `Opdracht: ${input.goal}`,
+              '',
+              'Jouw laatste bericht:',
+              summary || '(leeg)',
+              '',
+              question,
+              'Antwoord alleen met een getal tussen 0 en 1.',
+            ].join('\n');
+            const command = buildAsk(input, prompt, scratch);
+            try {
+              const result = await exec(command.file, command.args, {
+                cwd: input.worktree,
+                ...(command.stdin !== undefined ? { input: command.stdin } : {}),
+                env: { ...process.env, ...input.env },
+                signal: input.signal,
+              });
+              if (result.code !== 0) return undefined;
+              const last = usesLastFile ? await readFile(scratch, 'utf8').catch(() => undefined) : undefined;
+              return parse(result.stdout, last).summary;
+            } catch {
+              return undefined;
+            } finally {
+              if (usesLastFile) await rm(scratch, { force: true });
+            }
+          },
+        }
+      : {}),
     async *run(input) {
       const scratch = join(tmpdir(), `vlyn-${name}-${randomUUID()}.last`);
       const command = build(input, scratch);
@@ -234,6 +267,12 @@ export function claudeAdapter(exec: Exec = defaultExec): AgentAdapter {
       stdin: taskPrompt(input.goal, input.check),
     }),
     (stdout) => parseClaude(stdout),
+    false,
+    (_input, prompt) => ({
+      file: 'claude',
+      args: ['-p', '--output-format', 'stream-json', '--verbose'],
+      stdin: prompt,
+    }),
   );
 }
 
@@ -259,6 +298,11 @@ export function codexAdapter(exec: Exec = defaultExec): AgentAdapter {
     }),
     (stdout, last) => parseCodex(stdout, last),
     true,
+    (input, prompt, scratch) => ({
+      file: 'codex',
+      args: ['exec', '--json', '-s', 'read-only', '--skip-git-repo-check', '-C', input.worktree, '-o', scratch, '-'],
+      stdin: prompt,
+    }),
   );
 }
 
@@ -268,6 +312,8 @@ export function piAdapter(exec: Exec = defaultExec): AgentAdapter {
     exec,
     (input) => ({ file: 'pi', args: ['-p', '--mode', 'json', taskPrompt(input.goal, input.check)] }),
     (stdout) => parsePi(stdout),
+    false,
+    (_input, prompt) => ({ file: 'pi', args: ['-p', '--mode', 'json', prompt] }),
   );
 }
 
@@ -287,6 +333,9 @@ export type FakeScript = {
 export function fakeAdapter(script: FakeScript = {}): AgentAdapter {
   return {
     name: 'fake',
+    async ask() {
+      return script.selfConfidence === undefined ? undefined : String(script.selfConfidence);
+    },
     async *run(input) {
       for (const command of script.commands ?? []) yield { type: 'command', command };
       for (const [path, text] of Object.entries(script.edits ?? {})) {

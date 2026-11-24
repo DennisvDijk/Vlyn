@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, readFile, realpath } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SecurityLog } from '../broker.ts';
@@ -10,8 +10,10 @@ import { gitOutput, owns } from '../parallel.ts';
 import { posture, runGoverned } from '../sandbox.ts';
 import { createAdapter } from './adapters.ts';
 import type { FakeScript } from './adapters.ts';
+import { chooseModel, featuresOf, handModel, parseProbability, predict, selfQuestion } from './calibration.ts';
+import type { Features } from './calibration.ts';
 import { findSkipMarkers, protectedPaths, scriptsDiffer } from './gates.ts';
-import { insertJudgeRun } from './store.ts';
+import { insertJudgeRun, insertOutcome, insertPrediction, processHistory } from './store.ts';
 import { JudgeRefusal } from './types.ts';
 import type {
   AgentAdapter,
@@ -25,6 +27,8 @@ import type {
 } from './types.ts';
 
 export * from './types.ts';
+export * from './calibration.ts';
+export { scoredRows } from './store.ts';
 export { createAdapter, fakeAdapter, taskPrompt } from './adapters.ts';
 export type { FakeScript } from './adapters.ts';
 export { extractConflicts, findSkipMarkers, isDefaultProtected, protectedPaths } from './gates.ts';
@@ -207,8 +211,117 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
     allowNoop: options.allowNoop ?? false,
   });
   const reasons: VerdictReason[] = crashed ? [timedOut ? 'timeout' : 'agent_crash'] : base_reasons;
-  const finishedAt = new Date().toISOString();
-  const result: JudgeResult = {
+  const diffSha = createHash('sha256').update(diff).update(JSON.stringify(untrackedText)).digest('hex');
+
+  // Predictions come before the held-out check. Nothing below this line may change them.
+  const journal = options.record === false ? undefined : new Journal(options.home);
+  let accept: JudgeResult['accept'];
+  let predictions: JudgeResult['predictions'];
+  let finishedAt = new Date().toISOString();
+  try {
+    const features = featuresOf({
+      crashed,
+      checkRan: ran,
+      checkPassed: passed,
+      details,
+      changedFiles: changedFiles.length,
+      diffLines: diff.split('\n').filter((line) => /^[+-](?![+-])/u.test(line)).length,
+    });
+    const model = journal ? chooseModel(historyOf(journal)) : handModel;
+    const pProcess = predict(model, features);
+    let pSelf: number | undefined;
+    if (!crashed) {
+      try {
+        const reply = adapter.ask
+          ? await adapter.ask(
+              { worktree, goal: options.goal, check: options.check, env: options.env ?? {}, signal: controller.signal },
+              selfQuestion,
+              summary,
+            )
+          : undefined;
+        pSelf = reply === undefined ? selfConfidence : parseProbability(reply);
+      } catch {
+        pSelf = selfConfidence;
+      }
+    }
+    predictions = { ...(pSelf === undefined ? {} : { self: pSelf }), process: pProcess, processModel: model.version };
+
+    if (journal) {
+      insertJudgeRun(journal.db, {
+        id,
+        root,
+        base,
+        goal: options.goal,
+        taskType: options.taskType,
+        agent: adapter.name,
+        checkCmd: options.check,
+        acceptCmd: options.accept,
+        verdict,
+        reasons: JSON.stringify({ reasons, ...details }),
+        diffSha,
+        usage: usage ? JSON.stringify(usage) : undefined,
+        startedAt,
+        finishedAt,
+      });
+      const log = new SecurityLog(journal.db);
+      log.append({
+        runId: id,
+        actorId: 'judge',
+        action: 'judge.start',
+        target: adapter.name,
+        decision: 'allow',
+        detail: options.goal,
+      });
+      log.append({
+        runId: id,
+        actorId: 'judge',
+        action: 'judge.verdict',
+        target: verdict,
+        decision: verdict === 'completed' ? 'allow' : 'deny',
+        detail: JSON.stringify({ reasons, diffSha }),
+      });
+      for (const [source, p, version, detail] of [
+        ['process', pProcess, model.version, JSON.stringify(features)] as const,
+        ...(pSelf === undefined ? [] : [['self', pSelf, 'asked-after-run', undefined] as const]),
+      ]) {
+        insertPrediction(journal.db, { runId: id, source, p, features: detail, modelVersion: version });
+        log.append({
+          runId: id,
+          actorId: 'judge',
+          action: 'judge.prediction',
+          target: source,
+          decision: 'allow',
+          detail: JSON.stringify({ p, modelVersion: version }),
+        });
+      }
+    }
+
+    // Held-out check. Its output is dropped here: only pass or fail is kept.
+    if (options.accept?.trim()) {
+      options.onAccept?.();
+      accept = await runAccept(options.accept, options.acceptDir, worktree, requireSandbox);
+      if (journal && accept.ran) {
+        const r = accept.passed ? 1 : 0;
+        insertOutcome(journal.db, { runId: id, kind: 'accept', r });
+        new SecurityLog(journal.db).append({
+          runId: id,
+          actorId: 'judge',
+          action: 'judge.outcome',
+          target: 'accept',
+          decision: accept.passed ? 'allow' : 'deny',
+          detail: JSON.stringify({ r }),
+        });
+      }
+    }
+    finishedAt = new Date().toISOString();
+  } finally {
+    journal?.close();
+    if (!options.keepWorktree) {
+      await gitOutput(root, ['worktree', 'remove', '--force', '--', worktree]).catch(() => undefined);
+      await gitOutput(root, ['worktree', 'prune']).catch(() => undefined);
+    }
+  }
+  return {
     id,
     verdict,
     reasons,
@@ -219,63 +332,48 @@ export async function judge(options: JudgeOptions): Promise<JudgeResult> {
     summary,
     changedFiles,
     diff,
-    diffSha: createHash('sha256').update(diff).update(JSON.stringify(untrackedText)).digest('hex'),
+    diffSha,
     check,
     usage,
     selfConfidence,
+    predictions,
+    accept,
     startedAt,
     finishedAt,
     worktree: options.keepWorktree ? worktree : undefined,
   };
-
-  try {
-    if (options.record !== false) record(result, root, options);
-  } finally {
-    if (!options.keepWorktree) {
-      await gitOutput(root, ['worktree', 'remove', '--force', '--', worktree]).catch(() => undefined);
-      await gitOutput(root, ['worktree', 'prune']).catch(() => undefined);
-    }
-  }
-  return result;
 }
 
-function record(result: JudgeResult, root: string, options: JudgeOptions): void {
-  const journal = new Journal(options.home);
+function historyOf(journal: Journal): { features: Features; r: 0 | 1 }[] {
+  const rows: { features: Features; r: 0 | 1 }[] = [];
+  for (const row of processHistory(journal.db)) {
+    try {
+      rows.push({ features: JSON.parse(row.features) as Features, r: row.r === 1 ? 1 : 0 });
+    } catch {
+      /* a row we cannot read is left out of the fit */
+    }
+  }
+  return rows;
+}
+
+/** Run the held-out check in the sandbox. The folder with the held-out tests is copied in only now. */
+async function runAccept(
+  command: string,
+  acceptDir: string | undefined,
+  worktree: string,
+  requireSandbox: boolean,
+): Promise<{ ran: boolean; passed: boolean }> {
   try {
-    insertJudgeRun(journal.db, {
-      id: result.id,
-      root,
-      base: result.base,
-      goal: result.goal,
-      taskType: options.taskType,
-      agent: result.agent,
-      checkCmd: options.check,
-      verdict: result.verdict,
-      reasons: JSON.stringify({ reasons: result.reasons, ...result.details }),
-      diffSha: result.diffSha,
-      usage: result.usage ? JSON.stringify(result.usage) : undefined,
-      startedAt: result.startedAt,
-      finishedAt: result.finishedAt,
+    if (acceptDir) await cp(acceptDir, join(worktree, '.vlyn-accept'), { recursive: true });
+    const result = await runGoverned({
+      command,
+      cwd: worktree,
+      manifest: manifestFor(worktree, { check: command }),
+      requireSandbox,
     });
-    const log = new SecurityLog(journal.db);
-    log.append({
-      runId: result.id,
-      actorId: 'judge',
-      action: 'judge.start',
-      target: result.agent,
-      decision: 'allow',
-      detail: result.goal,
-    });
-    log.append({
-      runId: result.id,
-      actorId: 'judge',
-      action: 'judge.verdict',
-      target: result.verdict,
-      decision: result.verdict === 'completed' ? 'allow' : 'deny',
-      detail: JSON.stringify({ reasons: result.reasons, diffSha: result.diffSha }),
-    });
-  } finally {
-    journal.close();
+    return { ran: result.exitCode !== null, passed: result.exitCode === 0 };
+  } catch {
+    return { ran: false, passed: false };
   }
 }
 

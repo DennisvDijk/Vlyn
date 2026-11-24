@@ -30,6 +30,11 @@ export interface AgentAdapter {
   name: string;
   /** Yields events and ends with one `finish` event. Throws when the agent crashes. */
   run(input: AgentRunInput): AsyncIterable<AgentEvent>;
+  /**
+   * Optional. Ask the agent the fixed confidence question after the run, in a separate call that is not part of the task
+   * prompt. Returns the reply text. Adapters without it give no `p_self`.
+   */
+  ask?(input: AgentRunInput, question: string, summary: string): Promise<string | undefined>;
 }
 
 export type Verdict = 'completed' | 'unverified' | 'conflict' | 'failed';
@@ -80,6 +85,18 @@ export type JudgeOptions = {
   isolates?: (() => boolean) | undefined;
   env?: Record<string, string> | undefined;
   taskType?: string | undefined;
+  /**
+   * Held-out acceptance check. It runs only after the predictions are written, in the sandbox, and its output is never
+   * stored and never shown to the agent. Only pass or fail is kept.
+   */
+  accept?: string | undefined;
+  /**
+   * Folder with the held-out tests. It lives outside the repository and is copied into the worktree as `.vlyn-accept/`
+   * only after the predictions are written.
+   */
+  acceptDir?: string | undefined;
+  /** Called right before the accept check starts. For tests of the ordering. */
+  onAccept?: (() => void) | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -98,6 +115,10 @@ export type JudgeResult = {
   check: { command: string; exitCode: number | null; output: string; driver: string; isolated: boolean } | undefined;
   usage: ModelUsage | undefined;
   selfConfidence: number | undefined;
+  /** Probabilities that were written before the accept check ran. Absent keys mean no prediction. */
+  predictions: { self?: number; process: number; processModel: string } | undefined;
+  /** Only pass or fail of the held-out check. `ran` is false when it could not start. */
+  accept: { ran: boolean; passed: boolean } | undefined;
   startedAt: string;
   finishedAt: string;
   worktree: string | undefined;

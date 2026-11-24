@@ -142,7 +142,7 @@ test('the run is written to the journal and the audit chain', async (context) =>
     const log = new SecurityLog(journal.db);
     assert.deepEqual(
       log.events(result.id).map((event) => event.action),
-      ['judge.start', 'judge.verdict'],
+      ['judge.start', 'judge.verdict', 'judge.prediction'],
     );
     assert.equal(log.verify().ok, true);
   } finally {
